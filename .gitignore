@@ -11,4 +11,5 @@ skills/playwright-cli/
 !agents/**
 !hooks/
 !hooks/**
+hooks/security-gate.sh
 !settings.json
