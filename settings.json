@@ -11,7 +11,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -Command \"(New-Object Media.SoundPlayer 'C:\\Users\\tomasz.romanowski\\downloads\\finished.wav').PlaySync()\"",
+            "command": "bash ~/.claude/hooks/finished.sh",
             "timeout": 10
           }
         ]
@@ -23,7 +23,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -Command \"(New-Object Media.SoundPlayer 'C:\\Users\\tomasz.romanowski\\downloads\\your_turn.wav').PlaySync()\"",
+            "command": "bash ~/.claude/hooks/your_turn.sh",
             "timeout": 10
           }
         ]

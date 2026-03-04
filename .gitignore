@@ -9,4 +9,6 @@
 skills/playwright-cli/
 !agents/
 !agents/**
+!hooks/
+!hooks/**
 !settings.json
