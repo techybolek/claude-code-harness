@@ -1,0 +1,11 @@
+# Only track commands, skills, agents, and config
+# Ignore everything else (cache, history, telemetry, etc.)
+*
+!.gitignore
+!commands/
+!commands/**
+!skills/
+!skills/**
+!agents/
+!agents/**
+!settings.json

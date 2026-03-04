@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -Command \"(New-Object Media.SoundPlayer 'C:\\Users\\tomasz.romanowski\\downloads\\finished.wav').PlaySync()\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -Command \"(New-Object Media.SoundPlayer 'C:\\Users\\tomasz.romanowski\\downloads\\your_turn.wav').PlaySync()\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "alwaysThinkingEnabled": true,
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true
+}
