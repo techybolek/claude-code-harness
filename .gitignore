@@ -6,6 +6,7 @@
 !commands/**
 !skills/
 !skills/**
+skills/playwright-cli/
 !agents/
 !agents/**
 !settings.json
