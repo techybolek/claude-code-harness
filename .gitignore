@@ -2,6 +2,7 @@
 # Ignore everything else (cache, history, telemetry, etc.)
 *
 !.gitignore
+!.gitattributes
 !commands/
 !commands/**
 !skills/
