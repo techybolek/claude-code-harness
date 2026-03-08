@@ -16,16 +16,8 @@ Execute these steps in order. Do not skip steps.
 
 ### Step 2: Split into Phases
 
-1. Read `.claude/commands/plan/phase.md` to get the phasing prompt template.
-2. Spawn a **phasing subagent** using the Agent tool with `subagent_type: "general-purpose"`. Give it this prompt:
-
-```
-You are executing a phasing command. Follow the instructions below exactly.
-
-{paste the ENTIRE content of .claude/commands/plan/phase.md here, with $ARGUMENTS replaced by the plan file path}
-```
-
-3. Read the subagent's response. Look for the index file path (`SPEC/PLAN/PHASED/{name}/{name}_phase_00_index.md`).
+1. Invoke the `plan:phase` skill using the Skill tool with the plan file path as the argument.
+2. Read the skill's response. Look for the index file path (`SPEC/PLAN/PHASED/{name}/{name}_phase_00_index.md`).
 4. If the subagent reported NOT PHASEABLE:
    - Print: `Plan is not phaseable — executing as single implementation`
    - Go to **Step 3a: Single Execution**
@@ -176,7 +168,7 @@ Print a final summary:
 
 - **Stay lightweight.** You are the orchestrator. Read files, spawn subagents, update the index file. Do not write application code or implement phases yourself.
 - **Fresh contexts.** Every subagent gets a fresh context via the Agent tool. This is the whole point — each phase runs in an isolated context window.
-- **Reuse commands.** Read `.claude/commands/plan/phase.md` at runtime for the phasing step. Never hardcode its content.
+- **Reuse skills.** Invoke the `plan:phase` skill via the Skill tool for the phasing step. Never hardcode its content.
 - **One retry.** Each phase gets at most one diagnostic retry. If it fails twice, stop.
 - **Update status.** Always update the index file status column before and after each phase execution.
 - **Print status.** After each major step, print a brief status line so the user can follow along.
