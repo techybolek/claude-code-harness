@@ -16,3 +16,4 @@ hooks/security-gate.sh
 !scripts/
 !scripts/**
 !settings.json
+!CLAUDE.md
