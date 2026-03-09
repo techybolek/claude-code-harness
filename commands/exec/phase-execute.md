@@ -51,9 +51,10 @@ Read and implement the plan in {phase_file_path}
 
 ## Instructions
 - Read the phase file thoroughly.
+- **TDD is required:** Write the tests from the Test Plan section FIRST, before writing any implementation code. Tests must fail before you implement.
 - Implement every item in the Scope and Implementation Steps sections.
+- Run all tests — they must pass before this phase is done.
 - Follow the Deliverables and Validation Criteria as your definition of done.
-- Run any tests or validation commands specified in the phase.
 
 ## When Done
 Report EXACTLY this at the end of your response:

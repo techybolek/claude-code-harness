@@ -79,14 +79,20 @@ Analyze the provided plan and break it into separately testable phases. Create f
 ## Deliverables
 - [ ] <deliverable>
 
+## Test Plan (write these BEFORE implementing)
+- [ ] <test name and what it asserts>
+
+## Implementation Steps
+1. Write the tests listed in Test Plan first — they must fail before you write any implementation code.
+2. <step>
+3. Run tests — they must all pass before this phase is considered complete.
+
 ## Validation Criteria
-- [ ] <testable criterion>
+- [ ] All tests in Test Plan pass
+- [ ] <additional testable criterion>
 
 ## Files Touched
 - `path/to/file.py` - <description>
-
-## Implementation Steps
-1. <step>
 
 ## Notes
 <phase-specific notes>
@@ -99,6 +105,8 @@ Consider splitting along these lines:
 - Backend vs Frontend
 - Core vs Extended functionality
 - Read vs Write operations
+
+**TDD constraint:** Each phase must include its own tests. Never create a dedicated "testing phase" at the end — tests belong inside the phase that implements the feature. Phases are complete only when their tests pass.
 
 ## Plan to Analyze
 $ARGUMENTS
