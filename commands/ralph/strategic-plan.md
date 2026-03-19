@@ -1,5 +1,5 @@
 ---
-name: dev-docs
+name: strategic-plan
 description: Create a comprehensive strategic plan with structured task breakdown
 argument-hint: Describe what you need planned (e.g., "refactor authentication system", "implement microservices")
 ---
