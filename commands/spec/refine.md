@@ -99,7 +99,6 @@ You are helping refine a vague feature request into a detailed, actionable speci
 [Continue until ready to write spec]
 
 ## Guidelines
-- Focus on WHAT and WHY, not HOW (implementation comes later)
 - Anticipate edge cases
 - Provide multiple-choice options when helpful
 - Confirm understanding by paraphrasing

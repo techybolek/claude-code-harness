@@ -18,9 +18,10 @@ Based on the `Instructions` below, take the `Variables` follow the `Run` section
 
 ## Run
 
-1. Run `git diff HEAD` to understand what changes have been made
-2. Run `git add -A` to stage all changes
-3. Run `git commit -m "<generated_commit_message>"` to create the commit
+1. Run `git status` and `git diff HEAD` to understand all changes (both tracked modifications and untracked files)
+2. Stage all changes: run `git add -A` to stage everything. If `git add -A` fails (e.g. due to special files), fall back to staging explicitly: `git add <specific files and directories>`
+3. Before committing, run `git status` to verify that ALL changed and untracked files are staged. If any are missing, stage them individually.
+4. Run `git commit -m "<generated_commit_message>"` to create the commit
 
 ## Report
 

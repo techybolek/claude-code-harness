@@ -6,7 +6,7 @@ Create a plan in `SPEC/PLAN/*.md` to build the project described below.
 
 - Define a clean, simple architecture appropriate for the project scope.
 - Keep it simple — build only what's needed initially.
-- Include creating automated tests as explicit steps in the plan. The task is not done until all tests pass.
+- Each task must include its tests. A task is not done until its tests pass.
 - List required dependencies in the `Notes` section.
 
 ## Plan Format
@@ -20,7 +20,7 @@ Create a plan in `SPEC/PLAN/*.md` to build the project described below.
 ## Problem Statement
 <the problem or need this project addresses>
 
-## Solution Statement
+## Solution Approach
 <proposed approach>
 
 ## Requirements
@@ -32,8 +32,16 @@ Create a plan in `SPEC/PLAN/*.md` to build the project described below.
 ## Project Structure
 <directory structure and files with brief descriptions>
 
-## Step by Step Tasks
-<h3 headers with bullet points, ordered from setup through implementation. Include steps to create automated tests alongside each implementation step. Last step: run the Validation Commands.>
+## Tasks
+
+### T1: <title>
+- **What:** <concrete deliverable>
+- **Files:** <files to create/modify>
+- **Tests:** <test files to write, what they assert>
+- **Done when:** <specific, measurable acceptance criteria>
+- **Depends on:** <task IDs, or "none">
+
+<as many tasks as needed — no fixed number>
 
 ## Validation Commands
 <commands to run the full test suite. All tests must pass.>

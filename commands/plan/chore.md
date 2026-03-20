@@ -6,7 +6,7 @@ Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
 
 - Research the codebase to understand existing patterns before planning.
 - Keep it simple and thorough — get it right in one pass.
-- Include creating/updating automated tests as explicit steps in the plan. The task is not done until all tests pass with no regressions.
+- Each task must include its tests. A task is not done until its tests pass with no regressions.
 
 ## Plan Format
 
@@ -19,8 +19,16 @@ Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
 ## Relevant Files
 <list files relevant to the chore with brief rationale. New files go under an h3 'New Files' section.>
 
-## Step by Step Tasks
-<h3 headers with bullet points, ordered foundationally. Include steps to create/update automated tests that cover the changes. Last step: run the Validation Commands.>
+## Tasks
+
+### T1: <title>
+- **What:** <concrete deliverable>
+- **Files:** <files to create/modify>
+- **Tests:** <test files to write, what they assert>
+- **Done when:** <specific, measurable acceptance criteria>
+- **Depends on:** <task IDs, or "none">
+
+<as many tasks as needed — no fixed number>
 
 ## Validation Commands
 <commands to run the full test suite and confirm no regressions. Discover the test runner from CLAUDE.md. All tests must pass.>

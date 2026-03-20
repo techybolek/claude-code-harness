@@ -6,7 +6,8 @@ Create a plan in `SPEC/PLAN/*.md` to implement the feature described below.
 
 - Research the codebase to understand existing patterns, architecture, and conventions.
 - Follow existing patterns. Don't reinvent the wheel.
-- Include creating/updating automated tests as explicit steps in the plan. The task is not done until all tests pass with no regressions.
+- Each task must include its tests. A task is not done until its tests pass with no regressions.
+- Produce as many or as few tasks as the work requires. Don't force structure.
 
 ## Plan Format
 
@@ -24,27 +25,32 @@ So that <benefit/value>
 ## Problem Statement
 <the problem or opportunity this feature addresses>
 
-## Solution Statement
+## Solution Approach
 <proposed approach and how it solves the problem>
 
 ## Relevant Files
 <list files relevant to the feature with brief rationale. New files go under an h3 'New Files' section.>
 
-## Implementation Plan
-### Phase 1: Foundation
-<foundational work needed before the main feature>
+## Tasks
 
-### Phase 2: Core Implementation
-<main implementation work>
+### T1: <title>
+- **What:** <concrete deliverable>
+- **Files:** <files to create/modify>
+- **Tests:** <test files to write, what they assert>
+- **Done when:** <specific, measurable acceptance criteria>
+- **Depends on:** <task IDs, or "none">
 
-### Phase 3: Integration
-<integration with existing functionality>
+### T2: <title>
+- **What:** <concrete deliverable>
+- **Files:** <files to create/modify>
+- **Tests:** <test files to write, what they assert>
+- **Done when:** <specific, measurable acceptance criteria>
+- **Depends on:** <task IDs, or "none">
 
-## Step by Step Tasks
-<h3 headers with bullet points, ordered foundationally. Include steps to create/update automated tests alongside each implementation step. Last step: run the Validation Commands.>
+<as many tasks as needed — no fixed number>
 
 ## Acceptance Criteria
-<specific, measurable criteria for the feature to be considered complete>
+<overall feature-level criteria — the feature is complete when ALL of these are true>
 
 ## Validation Commands
 <commands to run the full test suite and confirm no regressions. Discover the test runner from CLAUDE.md. Include end-to-end testing. All tests must pass.>
