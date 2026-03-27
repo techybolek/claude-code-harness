@@ -39,8 +39,15 @@
   "enabledPlugins": {
     "code-simplifier@claude-plugins-official": true
   },
+  "sandbox": {
+    "filesystem": {
+      "allowWrite": [
+        "~/.cache"
+      ]
+    }
+  },
   "alwaysThinkingEnabled": true,
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
-  "model": "opus[1m]"
+  "model": "haiku"
 }

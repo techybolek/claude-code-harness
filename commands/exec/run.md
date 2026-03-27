@@ -58,6 +58,7 @@ Implement this task from the plan at {plan-file-path}:
 - Read CLAUDE.md to discover the test runner and project conventions.
 - Implement the task: write code, write tests, run tests.
 - Tests MUST pass. If they fail, fix the code (not the tests).
+- **E2E tests** are interactive `playwright-cli` sessions, NOT .spec.ts files. If the task has an **E2E** field, create a command file in `.claude/commands/e2e/` and execute it via the `/test_e2e` skill. Never generate Playwright .spec.ts files.
 
 ## Report
 When done, report EXACTLY:

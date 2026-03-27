@@ -7,6 +7,7 @@ Implement all tasks in the plan in a single context. Use this for small plans (1
 - Read CLAUDE.md to discover the test runner and any server startup requirements.
 - For each task: implement, run its tests, confirm "Done when" criteria are met before moving on.
 - **Tests MUST actually pass.** If tests fail, diagnose and fix — do NOT report completion while tests are failing.
+- **E2E tests** are interactive `playwright-cli` sessions, NOT .spec.ts files. If a task has an **E2E** field, create a command file in `.claude/commands/e2e/` and execute it via the `/test_e2e` skill. Never generate Playwright .spec.ts files.
 - After all tasks: run the full test suite from the plan's Validation Commands.
 - If the project requires a running server to test, start it in the background before running tests, then kill it when done.
 

@@ -37,6 +37,7 @@ So that <benefit/value>
 - **What:** <concrete deliverable>
 - **Files:** <files to create/modify>
 - **Tests:** <test files to write, what they assert>
+- **E2E:** <if this task needs E2E verification, describe the test steps here. E2E tests are executed interactively via `playwright-cli`, NOT as .spec.ts files. If an E2E command file is needed, create it in `.claude/commands/e2e/`. Otherwise write "none".>
 - **Done when:** <specific, measurable acceptance criteria>
 - **Depends on:** <task IDs, or "none">
 
@@ -44,6 +45,7 @@ So that <benefit/value>
 - **What:** <concrete deliverable>
 - **Files:** <files to create/modify>
 - **Tests:** <test files to write, what they assert>
+- **E2E:** <see above>
 - **Done when:** <specific, measurable acceptance criteria>
 - **Depends on:** <task IDs, or "none">
 
@@ -53,7 +55,13 @@ So that <benefit/value>
 <overall feature-level criteria — the feature is complete when ALL of these are true>
 
 ## Validation Commands
-<commands to run the full test suite and confirm no regressions. Discover the test runner from CLAUDE.md. Include end-to-end testing. All tests must pass.>
+<commands to run the full test suite and confirm no regressions. Discover the test runner from CLAUDE.md. All tests must pass.>
+
+## E2E Testing
+E2E tests in this project are interactive `playwright-cli` sessions, NOT .spec.ts files. If the feature needs E2E coverage:
+1. Create a test command file in `.claude/commands/e2e/<test_name>.md` with User Story, Test Steps, and Success Criteria.
+2. Execute it via `/test_e2e` which runs the steps interactively with `playwright-cli`.
+Do NOT generate Playwright .spec.ts test files for E2E testing.
 
 ## Notes
 <additional context, future considerations, new dependencies, etc.>

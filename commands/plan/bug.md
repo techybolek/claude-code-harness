@@ -46,6 +46,9 @@ Create a plan in `SPEC/PLAN/*.md` to fix the bug described below.
 ## Validation Commands
 <commands to run the full test suite and confirm no regressions. Include reproduction before/after. Discover the test runner from CLAUDE.md. All tests must pass.>
 
+## E2E Testing
+If the bug needs E2E verification, create a test command in `.claude/commands/e2e/` and execute via `/test_e2e` using `playwright-cli`. Do NOT write .spec.ts files.
+
 ## Notes
 <additional context, new dependencies, etc.>
 ```

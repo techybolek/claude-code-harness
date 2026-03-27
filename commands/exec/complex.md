@@ -59,7 +59,7 @@ Implement this task from the plan at {plan-file-path}:
 1. Read the plan file for overall context.
 2. Read CLAUDE.md to discover the test runner and project conventions.
 3. Explore the codebase to understand current state.
-4. Implement the task: write code, write tests, run tests.
+4. Implement the task: write code, write tests, run tests. **E2E tests** are interactive `playwright-cli` sessions, NOT .spec.ts files. If the task has an **E2E** field, create a command file in `.claude/commands/e2e/` and execute it via the `/test_e2e` skill.
 5. After implementing, run the task's tests AND the full test suite.
 6. If ANY test fails:
    - Read the failure output carefully.
