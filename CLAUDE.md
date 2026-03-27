@@ -27,11 +27,12 @@
 4. Never commit with failing tests
 
 ### Real Tests Over Mocks
-- Prefer real tests that exercise actual behavior end-to-end
-- Mocking everything out defeats the purpose of testing — if your test can't catch a real integration bug, it has little value
-- Do NOT avoid writing real tests just because they require network access, external services, or API keys
-- Needing an API key or a live endpoint is not a valid reason to skip or mock a test — set up credentials and test for real
-- Only mock what you genuinely cannot control (e.g. time, randomness, third-party services with no test environment)
+- Real integration tests are strongly preferred over mocks. Mocks are never a replacement for real tests.
+- Every test must add real value — don't write tests just to inflate coverage or say you have them. YAGNI applies to tests too.
+- Do NOT avoid writing real tests just because they require network access, external services, or API keys — set up credentials and test for real.
+- Only use mocks when testing many combinations of an algorithm where making a real call each time is truly unnecessary, costly, and slow (e.g. pure input validation edge cases).
+- A mocked test that returns hardcoded data and asserts on that same data catches zero real bugs — delete it.
+- Every mocked test must have a comment explaining why a mock is used instead of a real call (e.g. `// Mock: pure input validation, never reaches DB`).
 
 ## Git Commits
 

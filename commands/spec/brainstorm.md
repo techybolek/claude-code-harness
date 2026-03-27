@@ -2,6 +2,11 @@
 
 Research, explore, and brainstorm possible solutions to a problem, then deliver concrete recommendation(s).
 
+## Recent Codebase Activity
+Before starting, run `git log --oneline --stat -5` to understand recent changes.
+Use this context to understand what areas of the codebase are actively being worked on.
+This should inform your understanding but not override the user's explicit request.
+
 ## Instructions
 
 - Use your reasoning model: THINK HARD about the problem before proposing solutions.

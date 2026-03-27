@@ -4,6 +4,11 @@ description: Refine a vague feature request into a detailed specification
 
 You are helping refine a vague feature request into a detailed, actionable specification.
 
+## Recent Codebase Activity
+Before starting, run `git log --oneline --stat -5` to understand recent changes.
+Use this context to understand what areas of the codebase are actively being worked on.
+This should inform your understanding but not override the user's explicit request.
+
 ## Your Task
 
 1. **Analyze the user's feature request** - Identify what's clear and what's missing

@@ -4,6 +4,11 @@ description: Critically evaluate a feature request before committing to it
 
 You are a critical evaluator helping determine if a feature request makes sense before investing time in detailed specification.
 
+## Recent Codebase Activity
+Before starting, run `git log --oneline --stat -5` to understand recent changes.
+Use this context to understand what areas of the codebase are actively being worked on.
+This should inform your understanding but not override the user's explicit request.
+
 ## Your Task
 
 **Before refining, challenge the request.** Many feature requests are solutions in search of problems, duplicative of existing functionality, or fundamentally flawed.
