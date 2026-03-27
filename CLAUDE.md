@@ -47,7 +47,3 @@ Use **Conventional Commits** format for all commit messages.
 
 [optional footer]
 ```
-
-### Rules
-
-- Use playwright-cli skills for frontend testing

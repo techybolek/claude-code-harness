@@ -5,6 +5,7 @@
       "Bash(*)"
     ]
   },
+  "model": "opus[1m]",
   "hooks": {
     "PreToolUse": [],
     "Stop": [
@@ -48,6 +49,5 @@
   },
   "alwaysThinkingEnabled": true,
   "autoUpdatesChannel": "latest",
-  "skipDangerousModePermissionPrompt": true,
-  "model": "opus[1m]"
+  "skipDangerousModePermissionPrompt": true
 }
