@@ -2,12 +2,33 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(*)"
+      "Edit(//home/tromanow/PROJECTS/**)",
+      "Write(//home/tromanow/PROJECTS/**)"
+    ],
+    "deny": [
+      "mcp__atlassian",
+      "mcp__claude_ai_Vercel",
+      "mcp__github",
+      "mcp__linear",
+      "mcp__notion",
+      "mcp__slack",
+      "mcp__claude_ai_Figma"
     ]
   },
   "model": "opus[1m]",
   "hooks": {
-    "PreToolUse": [],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/safety_validator.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
@@ -35,7 +56,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "basename \"$(pwd)\""
+    "command": "bash ~/.claude/hooks/statusline.sh"
   },
   "enabledPlugins": {
     "code-simplifier@claude-plugins-official": true
@@ -44,10 +65,34 @@
     "filesystem": {
       "allowWrite": [
         "~/.cache"
+      ],
+      "denyRead": [
+        "~/.ssh",
+        "~/.gnupg",
+        "~/.aws",
+        "/mnt/c/Users/tomasz.romanowski/.azure",
+        "~/.config/gh",
+        "~/.config/gcloud",
+        "~/.docker/config.json",
+        "~/.gitconfig",
+        "~/.git-credentials",
+        "~/.npmrc",
+        "~/.env",
+        "~/.anthropic.env",
+        "~/.sqlsecrets",
+        "~/.bash_history",
+        "~/.psql_history",
+        "~/.mysql_history",
+        "~/.python_history",
+        "~/bin",
+        "~/.claude/.credentials.json"
       ]
     }
   },
   "alwaysThinkingEnabled": true,
   "autoUpdatesChannel": "latest",
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
+  "editorMode": "vim",
+  "preferredNotifChannel": "terminal_bell"
 }
