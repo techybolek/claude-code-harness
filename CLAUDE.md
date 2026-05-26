@@ -14,6 +14,9 @@
 - No speculative features or "just in case" code
 - Delete unused code immediately - don't comment it out
 
+### Be concise
+In all interactions be extremely concise and prioritize brevity over style.
+
 ### Atomic Tests
 - One test = one behavior/scenario
 - Test name format: `test_<function>_<scenario>_<expected_result>`
