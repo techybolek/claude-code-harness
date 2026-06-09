@@ -6,7 +6,7 @@ Create a plan in `SPEC/PLAN/*.md` to implement the feature described below.
 
 - Research the codebase to understand existing patterns, architecture, and conventions.
 - Follow existing patterns. Don't reinvent the wheel.
-- Each task must include its tests. A task is not done until its tests pass with no regressions.
+- Each task's **Tests** field is its gate, scoped to that task's change — name the specific test files/specs to write or run plus the cheapest covering check (typecheck/build). Do NOT write "run the full suite" per task: presentation/config-only tasks gate on build + preserved load-bearing selectors (`data-testid`, ids, form names); logic tasks run only the impacted tests (`vitest related`/`--changed`, the specific spec). The full suite runs in two places only — a first baseline task (if a green starting point matters) and the end (`Validation Commands`).
 - Produce as many or as few tasks as the work requires. Don't force structure.
 
 ## Plan Format
@@ -36,14 +36,14 @@ So that <benefit/value>
 ### T1: <title>
 - **What:** <concrete deliverable>
 - **Files:** <files to create/modify>
-- **Tests:** <test files to write, what they assert>
+- **Tests:** <the SCOPED gate for THIS task: specific test files/specs to write or run + cheapest covering check (typecheck/build); not the whole suite. Presentation/config-only → build + assert load-bearing selectors preserved.>
 - **Done when:** <specific, measurable acceptance criteria>
 - **Depends on:** <task IDs, or "none">
 
 ### T2: <title>
 - **What:** <concrete deliverable>
 - **Files:** <files to create/modify>
-- **Tests:** <test files to write, what they assert>
+- **Tests:** <the SCOPED gate for THIS task: specific test files/specs to write or run + cheapest covering check (typecheck/build); not the whole suite. Presentation/config-only → build + assert load-bearing selectors preserved.>
 - **Done when:** <specific, measurable acceptance criteria>
 - **Depends on:** <task IDs, or "none">
 

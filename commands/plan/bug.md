@@ -6,7 +6,7 @@ Create a plan in `SPEC/PLAN/*.md` to fix the bug described below.
 
 - Research the codebase to understand and reproduce the bug.
 - Be surgical — fix the root cause with minimal changes. Don't scope-creep.
-- Each task must include its tests. A task is not done until its tests pass with no regressions.
+- Each task's **Tests** field is its gate, scoped to that task's change — name the specific test files/specs (a bug fix should include a regression test that fails before / passes after) plus the cheapest covering check (typecheck/build). Do NOT write "run the full suite" per task; run only the impacted tests. The full suite runs in two places only — a first baseline task (if a green starting point matters) and the end (`Validation Commands`).
 - If you need a new library, note it in the `Notes` section.
 
 ## Plan Format
@@ -37,7 +37,7 @@ Create a plan in `SPEC/PLAN/*.md` to fix the bug described below.
 ### T1: <title>
 - **What:** <concrete deliverable>
 - **Files:** <files to create/modify>
-- **Tests:** <test files to write, what they assert>
+- **Tests:** <the SCOPED gate for THIS task: specific test files/specs to write or run + cheapest covering check (typecheck/build); not the whole suite. Presentation/config-only → build + assert load-bearing selectors preserved.>
 - **Done when:** <specific, measurable acceptance criteria>
 - **Depends on:** <task IDs, or "none">
 

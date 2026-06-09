@@ -56,8 +56,17 @@ Implement this task from the plan at {plan-file-path}:
 ## Context
 - Read the full plan file for overall context.
 - Read CLAUDE.md to discover the test runner and project conventions.
-- Implement the task: write code, write tests, run tests.
-- Tests MUST pass. If they fail, fix the code (not the tests).
+- Implement the task: write code, write tests.
+
+## Test gate (scope it to THIS task — do NOT blindly run the whole suite)
+- Run the task's own `Tests:` field verbatim. That field is the gate. If it names a scoped command, run exactly that.
+- Otherwise pick the cheapest gate that actually covers your change:
+  - Always: typecheck/compile or `build` (catches the same breakage a full unit run would, faster).
+  - Logic change: run only IMPACTED tests — `vitest related <changed-files>` / `vitest --changed`, or the specific spec file(s) / Playwright spec. Never `vitest run` the whole suite for one task.
+  - Presentation/markup/config-only change (no business logic): build/typecheck + confirm any load-bearing selectors (`data-testid`, ids, form names) are preserved (grep them). Skip the full unit suite — it does not exercise rendered output.
+- The full suite runs in exactly two places: the baseline (first/T0 task) and Step 4 final validation. Not per task.
+- If a suite is gated on an external prerequisite that is currently down (e.g. a blocked network host, no DB), say so and do not count its pre-existing failures as yours. Do not escalate (no sudo) to chase env flakiness.
+- Whatever gate you run MUST pass (excluding the pre-existing env failures noted above). If it fails on your change, fix the code (not the tests).
 
 ## Report
 When done, report EXACTLY:
@@ -94,7 +103,7 @@ A task implementation failed. Fix it.
 1. Read the plan for context.
 2. Examine the current codebase — check files that were supposed to be created/modified.
 3. Identify what went wrong and FIX it.
-4. Run tests until they pass.
+4. Run the task's scoped `Tests:` gate (impacted tests only, not the full suite) until it passes.
 
 ## Report
 **STATUS:** SUCCESS or FAILURE
@@ -109,7 +118,7 @@ A task implementation failed. Fix it.
 
 ### Step 4: Final Validation
 
-If all tasks completed, run the full validation commands from the plan in a final subagent to catch any cross-task regressions.
+If all tasks completed, run the full validation commands from the plan in a final subagent to catch any cross-task regressions. This is the one full-suite run after baseline — skip suites whose external prerequisite is confirmed down, and report pre-existing env failures separately from genuine regressions.
 
 ### Step 5: Report
 
@@ -135,3 +144,4 @@ Print:
 - **Dependency order.** Never execute a task before its dependencies are complete. If a dependency failed, skip dependent tasks (mark as SKIPPED).
 - **Print status.** After each task, print a status line so the user can follow along.
 - **No commits.** Do not create git commits. Leave all changes uncommitted.
+- **Scope the test gate; never blindly rerun the whole suite per task.** Full suite runs twice only — baseline + Step 4. Inner tasks gate on build/typecheck + impacted tests (`vitest related`/`--changed`, targeted spec) + preserved selectors. Match the gate to the change type (presentation-only → build + selector grep, no unit suite).

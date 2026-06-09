@@ -1,6 +1,5 @@
 {
-  "theme": "dark",
-  "skipDangerousModePermissionPrompt": true,
+  "model": "haiku",
   "hooks": {
     "Stop": [
       {
@@ -26,5 +25,10 @@
         ]
       }
     ]
-  }
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": false
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark"
 }

@@ -6,7 +6,7 @@ Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
 
 - Research the codebase to understand existing patterns before planning.
 - Keep it simple and thorough — get it right in one pass.
-- Each task must include its tests. A task is not done until its tests pass with no regressions.
+- Each task's **Tests** field is its gate, scoped to that task's change — name the specific test files/specs to write or run plus the cheapest covering check (typecheck/build). Do NOT write "run the full suite" per task: presentation/config-only tasks gate on build + preserved load-bearing selectors; logic tasks run only the impacted tests. The full suite runs in two places only — a first baseline task (if a green starting point matters) and the end (`Validation Commands`).
 
 ## Plan Format
 
@@ -24,7 +24,7 @@ Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
 ### T1: <title>
 - **What:** <concrete deliverable>
 - **Files:** <files to create/modify>
-- **Tests:** <test files to write, what they assert>
+- **Tests:** <the SCOPED gate for THIS task: specific test files/specs to write or run + cheapest covering check (typecheck/build); not the whole suite. Presentation/config-only → build + assert load-bearing selectors preserved.>
 - **Done when:** <specific, measurable acceptance criteria>
 - **Depends on:** <task IDs, or "none">
 

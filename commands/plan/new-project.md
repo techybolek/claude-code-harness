@@ -6,7 +6,7 @@ Create a plan in `SPEC/PLAN/*.md` to build the project described below.
 
 - Define a clean, simple architecture appropriate for the project scope.
 - Keep it simple — build only what's needed initially.
-- Each task must include its tests. A task is not done until its tests pass.
+- Each task's **Tests** field is its gate, scoped to that task's change — name the specific test files/specs to write or run plus the cheapest covering check (typecheck/build). Do NOT write "run the full suite" per task: presentation/config-only tasks gate on build + preserved load-bearing selectors; logic tasks run only the impacted tests. The full suite runs at the end (`Validation Commands`).
 - List required dependencies in the `Notes` section.
 
 ## Plan Format
@@ -37,7 +37,7 @@ Create a plan in `SPEC/PLAN/*.md` to build the project described below.
 ### T1: <title>
 - **What:** <concrete deliverable>
 - **Files:** <files to create/modify>
-- **Tests:** <test files to write, what they assert>
+- **Tests:** <the SCOPED gate for THIS task: specific test files/specs to write or run + cheapest covering check (typecheck/build); not the whole suite. Presentation/config-only → build + assert load-bearing selectors preserved.>
 - **Done when:** <specific, measurable acceptance criteria>
 - **Depends on:** <task IDs, or "none">
 
