@@ -1,11 +1,12 @@
 ---
 description: Refine a vague bug report into a detailed, actionable issue
+allowed-tools: Bash(git log:*)
 ---
 
 You are helping refine a vague bug report into a detailed, actionable issue specification.
 
 ## Recent Codebase Activity
-Before starting, run `git log --oneline --stat -5` to understand recent changes.
+Recent commits: !`git log --oneline --stat -5`
 Use this context to understand what areas of the codebase are actively being worked on.
 This should inform your understanding but not override the user's explicit request.
 

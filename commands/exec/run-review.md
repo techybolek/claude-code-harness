@@ -1,10 +1,10 @@
 ---
-description: "Execute Plan: Task-by-Task in Fresh Contexts"
+description: "Execute Plan: Task-by-Task in Fresh Contexts, with Review Loop"
 ---
 
-# Execute Plan: Task-by-Task in Fresh Contexts
+# Execute Plan: Task-by-Task in Fresh Contexts, with Review Loop
 
-You are an orchestrator. Your job is to execute a plan by running each task in a fresh subagent context. Stay lightweight — you read the plan, spawn subagents, track results, and report. You do no coding yourself.
+You are an orchestrator. Your job is to execute a plan by running each task in a fresh subagent context, then run an automated review→fix loop on the result. Stay lightweight — you read the plan, spawn subagents, track results, and report. You do no coding yourself.
 
 ## Input
 $ARGUMENTS
@@ -124,7 +124,67 @@ A task implementation failed. Fix it.
 
 If all tasks completed, run the full validation commands from the plan in a final subagent (`model: "sonnet"`) to catch any cross-task regressions. This is the one full-suite run after baseline — skip suites whose external prerequisite is confirmed down, and report pre-existing env failures separately from genuine regressions.
 
-### Step 5: Report
+### Step 5: Review & Fix Loop
+
+Only run this step if status is ALL COMPLETE and final validation passed. Otherwise mark Review as NOT RUN and go to Step 6.
+
+#### 5a. Review
+
+Spawn a **reviewer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "opus"`:
+
+```
+Review the uncommitted changes implementing the plan at {plan-file-path}.
+
+## Instructions
+1. Read the plan file — especially each task's "Done when" criteria.
+2. Run `git diff` (and `git status` for untracked files; read new files in full). The uncommitted changes ARE the work product.
+3. Review for BLOCKING issues only:
+   - Actual bugs: logic errors, broken edge cases, runtime errors waiting to happen
+   - Security issues
+   - Missed "Done when" criteria from the plan
+4. Style, naming, and comment-quality observations are NITS — list them, but they do not block.
+5. Do NOT modify any files. You are read-only.
+
+## Report
+Report EXACTLY:
+
+### Review
+**VERDICT:** PASS or NEEDS_WORK
+**Blocking:** {numbered list: file:line — what's wrong — expected fix. Or "None"}
+**Nits:** {numbered list, or "None"}
+```
+
+**If VERDICT is PASS:** record `Review: PASS` (or `PASS (after {N} fix rounds)`) and the nits. Go to Step 6.
+
+#### 5b. Fix
+
+**If VERDICT is NEEDS_WORK:** Print `Review round {N}: {count} blocking findings — spawning fixer`. Spawn a **fixer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "haiku"`:
+
+```
+A code review of the uncommitted changes implementing the plan at {plan-file-path} found blocking issues. Fix all of them.
+
+## Blocking findings
+{paste the full Blocking list from the reviewer}
+
+## Instructions
+1. Read the plan for context. Examine the current code at each finding's location.
+2. Fix every blocking finding. Do not address nits.
+3. Run the cheapest gate covering your changes (typecheck/build + impacted tests only — never the full suite). It must pass.
+4. Do not create git commits.
+
+## Report
+**STATUS:** SUCCESS or FAILURE
+**Summary:** {what was fixed}
+**Files Changed:** {list}
+**Test Output:** {pass/fail counts and command}
+**Issues:** {remaining problems, or "None"}
+```
+
+#### 5c. Loop
+
+After the fixer reports, return to 5a for a fresh review. **Maximum 2 fix rounds.** If the verdict is still NEEDS_WORK after the second fix round, record `Review: UNRESOLVED` with the remaining blocking findings and go to Step 6. If a fixer reports FAILURE, do the same immediately.
+
+### Step 6: Report
 
 Print:
 
@@ -138,6 +198,9 @@ Print:
   - T2: {title} — {COMPLETED/FAILED/SKIPPED}
   - ...
 - **Validation:** {PASS/FAIL/NOT RUN}
+- **Review:** {PASS / PASS (after N fix rounds) / UNRESOLVED / NOT RUN}
+- **Unresolved findings:** {list, only if UNRESOLVED}
+- **Nits (non-blocking):** {list from final review, or "None"}
 ```
 
 ## Rules
@@ -145,6 +208,7 @@ Print:
 - **Stay lightweight.** You are the orchestrator. Read files, spawn subagents, report. Do not write code yourself.
 - **Fresh contexts.** Every task runs in a fresh subagent. This is the whole point — prevents context bloat on medium/large plans.
 - **One retry.** Each task gets at most one diagnostic retry. If it fails twice, stop.
+- **Bounded review.** The review→fix loop runs at most 2 fix rounds. Reviewers are read-only; only fixers touch code. Nits never trigger a fix round.
 - **Dependency order.** Never execute a task before its dependencies are complete. If a dependency failed, skip dependent tasks (mark as SKIPPED).
 - **Print status.** After each task, print a status line so the user can follow along.
 - **No commits.** Do not create git commits. Leave all changes uncommitted.

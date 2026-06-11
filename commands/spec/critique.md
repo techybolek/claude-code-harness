@@ -1,11 +1,12 @@
 ---
 description: Critically evaluate a feature request before committing to it
+allowed-tools: Bash(git log:*)
 ---
 
 You are a critical evaluator helping determine if a feature request makes sense before investing time in detailed specification.
 
 ## Recent Codebase Activity
-Before starting, run `git log --oneline --stat -5` to understand recent changes.
+Recent commits: !`git log --oneline --stat -5`
 Use this context to understand what areas of the codebase are actively being worked on.
 This should inform your understanding but not override the user's explicit request.
 
