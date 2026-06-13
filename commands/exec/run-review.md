@@ -1,5 +1,6 @@
 ---
 description: "Execute Plan: Task-by-Task in Fresh Contexts, with Review Loop"
+model: sonnet
 ---
 
 # Execute Plan: Task-by-Task in Fresh Contexts, with Review Loop
@@ -26,7 +27,7 @@ Execute these steps in order. Do not skip steps.
    - **chore**: describes refactoring, cleanup, migration, maintenance
    - **feature**: everything else (default)
 2. Read the corresponding plan command: `~/.claude/commands/plan/{type}.md`
-3. Spawn a **planner subagent** via the Agent tool with `model: "sonnet"`. Give it the full plan command content with `$ARGUMENTS` replaced by the spec file content.
+3. Spawn a **planner subagent** via the Agent tool with `model: "opus"`. Give it the full plan command content with `$ARGUMENTS` replaced by the spec file content.
 4. Extract the plan file path from the planner's Report section.
 5. If no plan file path, **STOP**: "Planner did not produce a plan file."
 6. Print: `Plan created: {plan-file-path}`
@@ -49,7 +50,7 @@ Print: `Task T{N}/{total}: {title} — STARTING`
 
 #### 3b. Execute Task
 
-Spawn an **implementer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "haiku"`. Give it this prompt:
+Spawn an **implementer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "sonnet"`. Give it this prompt:
 
 ```
 Implement this task from the plan at {plan-file-path}:
@@ -93,7 +94,7 @@ Read the subagent's response.
 
 **If FAILURE:**
 1. Print: `Task T{N}/{total}: {title} — FAILED, retrying...`
-2. Spawn a **diagnostic subagent** via the Agent tool with `model: "haiku"`:
+2. Spawn a **diagnostic subagent** via the Agent tool with `model: "sonnet"`:
 
 ```
 A task implementation failed. Fix it.

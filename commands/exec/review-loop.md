@@ -1,5 +1,6 @@
 ---
 description: "Review & Fix Loop: automated review→fix on uncommitted changes"
+model: sonnet
 ---
 
 # Review & Fix Loop
@@ -55,8 +56,8 @@ Your value is adversarial analysis, NOT test execution. The implementor has alre
    - **Consistency:** does it match the conventions, error-handling, and idioms of the surrounding code?
    - **Test quality:** do the new/changed tests actually exercise the new behavior and would they FAIL if the code were wrong? Flag tests that mock then assert the mock's own hardcoded data (catch zero real bugs), tests that assert nothing meaningful, or new behavior with no test at all. Weak tests that mask bugs ARE blocking.
 4. Classify each finding:
-   - **Blocking:** a real bug, security issue, regression, missed "Done when" criterion, a test that would let a real bug through, or (from the spec) a diff that contradicts a touched Acceptance Criterion/Edge Case or does Out-of-Scope work.
-   - **Nit:** style, naming, comment quality, micro-optimizations. List them; they do not block.
+   - **Blocking:** a real bug, security issue, regression, missed "Done when" criterion, a test that would let a real bug through, or (from the spec) a diff that contradicts a touched Acceptance Criterion/Edge Case or does Out-of-Scope work. **Also blocking:** (a) a *user-visible defect* — rendered output that is wrong, inconsistent, misaligned, or contradicts a stated design/parity goal; "it's only cosmetic" does NOT downgrade something the user actually sees. (b) an *internal contradiction* between plan tasks, or between plan and spec — do NOT silently pick a side and bury it; flag it and state which task's intent is left unmet.
+   - **Nit:** code-hygiene items with **zero** user-visible or behavioral effect — internal naming, comments, micro-optimizations. A subjective preference with no intent reference ("I'd add padding") stays a nit; a visible inconsistency or an unmet stated goal does not. List nits; they do not block.
 5. Be specific and falsifiable. For each blocking finding, give the concrete input/scenario that breaks it and the expected fix. A vague "this might be fragile" is not blocking — either prove it or downgrade to a nit.
 6. Do NOT modify any files. You are read-only.
 
@@ -74,7 +75,7 @@ Report EXACTLY:
 
 ### Step 2: Fix
 
-**If VERDICT is NEEDS_WORK:** Print `Review round {N}: {count} blocking findings — spawning fixer`. Spawn a **fixer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "haiku"`:
+**If VERDICT is NEEDS_WORK:** Print `Review round {N}: {count} blocking findings — spawning fixer`. Spawn a **fixer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "sonnet"`:
 
 ```
 A code review of the uncommitted changes{ implementing the plan at {plan-file-path}} found blocking issues. Fix all of them.

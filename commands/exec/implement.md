@@ -1,3 +1,8 @@
+---
+description: "Implement Plan (Single Pass)"
+model: sonnet
+---
+
 # Implement Plan (Single Pass)
 
 Implement all tasks in the plan in a single context. Use this for small plans (1-3 tasks) where a fresh context per task is unnecessary.

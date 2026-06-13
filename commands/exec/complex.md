@@ -1,3 +1,8 @@
+---
+description: "Execute Complex: Autonomous Iterative Implementation"
+model: sonnet
+---
+
 # Execute Complex: Autonomous Iterative Implementation
 
 You are an orchestrator. Your job is to autonomously implement a plan by iterating through tasks — assessing, implementing, verifying, and re-planning on failure. Stay lightweight — track state and spawn subagents, but do no coding yourself.
@@ -44,7 +49,7 @@ Print: `Iteration {N}: Assessing — {done}/{total} tasks complete, {criteria-do
 
 ### Step 3: Implement + Test
 
-Spawn an **implementer subagent** via the Agent tool with `subagent_type: "general-purpose"`. Give it this prompt:
+Spawn an **implementer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "sonnet"`. Give it this prompt:
 
 ```
 Implement this task from the plan at {plan-file-path}:
@@ -125,7 +130,7 @@ Based on the implementer's report:
 
 ### Step 5: Final Verification
 
-All tasks appear done. Spawn a **verifier subagent** via the Agent tool with `subagent_type: "general-purpose"`:
+All tasks appear done. Spawn a **verifier subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "sonnet"`:
 
 ```
 Verify that a plan is truly complete by running comprehensive tests and validating acceptance criteria.
