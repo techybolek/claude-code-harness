@@ -1,11 +1,13 @@
 ---
-description: "Execute Plan: Task-by-Task in Fresh Contexts, with Review Loop"
+description: "End-to-end pipeline: spec or plan → review plan → implement → review code → fix"
 model: sonnet
 ---
 
-# Execute Plan: Task-by-Task in Fresh Contexts, with Review Loop
+# End-to-End Pipeline: Spec → Plan → Review → Implement → Review → Fix
 
-You are an orchestrator. Your job is to execute a plan by running each task in a fresh subagent context, then run an automated review→fix loop on the result. Stay lightweight — you read the plan, spawn subagents, track results, and report. You do no coding yourself.
+You are the orchestrator of a fully automated build pipeline. Given a **spec**, you plan it, review the plan, implement it task-by-task in fresh contexts, review the implementation, and apply fixes — each stage delegated to a fresh subagent. Given a **plan** directly, you start at execution. Stay lean: spawn subagents, read their short reports, branch, report. You do no planning, coding, or reviewing yourself — and you never pull a full diff or test log into your own context; that lives in the subagents.
+
+The pipeline runs automatically and stops for a human at exactly three points: a plan contradiction needing a design decision (Step 2.5), a task that fails twice (Step 3), or failed final validation (Step 4).
 
 ## Input
 $ARGUMENTS
@@ -39,6 +41,21 @@ Execute these steps in order. Do not skip steps.
    - **What**, **Files**, **Tests**, **Done when**, **Depends on**
 3. Topologically sort tasks by dependencies. If there's a cycle, **STOP** and report it.
 4. Print: `Found {N} tasks to execute`
+
+### Step 2.5: Plan Review (gated)
+
+Catch plan incoherence before writing any code — the cheapest place to fix it.
+
+**Gate.** Run this step only if **either**: (a) the plan was auto-generated in Step 1a, **or** (b) `{N} > 2` tasks. Otherwise print `Plan review: skipped ({reason})` and go to Step 3 — a small or hand-written plan has no cross-task seams worth a review pass.
+
+**Delegate — do NOT inline plan-review logic here.** `~/.claude/commands/exec/plan-review.md` is the single source of truth for the plan review→revise loop.
+
+1. Read `~/.claude/commands/exec/plan-review.md`.
+2. Execute its **Protocol Steps 1–2** as the orchestrator, with `{plan-file-path}` bound to this run's plan and `{spec-file-path}` bound to the spec from Step 1 (or "(none)"). Skip its Step 0 (input already resolved).
+3. Act on the result:
+   - **PASS** (or PASS after revisions) — the plan `.md` may have been edited in place; **re-read it and re-parse tasks (Step 2)** before executing, since the reviser may have changed task content. Then go to Step 3.
+   - **NEEDS_DECISION** — **STOP.** Surface the decision(s) to the user and do not execute. Running a plan with an unresolved contradiction just bakes the wrong choice into code.
+   - **UNRESOLVED** — **STOP.** Report the remaining findings; do not execute an incoherent plan.
 
 ### Step 3: Execute Tasks
 
@@ -143,6 +160,7 @@ Print:
 ```
 ## Execution Summary
 - **Plan:** {plan file path}
+- **Plan review:** {PASS / PASS (after N revise rounds) / SKIPPED ({reason}) / NEEDS_DECISION / UNRESOLVED}
 - **Tasks:** {completed}/{total} completed
 - **Status:** {ALL COMPLETE / PARTIAL / FAILED}
 - **Results:**
@@ -158,9 +176,11 @@ Print:
 ## Rules
 
 - **Stay lightweight.** You are the orchestrator. Read files, spawn subagents, report. Do not write code yourself.
+- **Distill, don't accumulate.** After each delegated loop (Step 2.5 plan review, Step 5 code review) finishes, keep only its verdict line plus actionable residue (revised plan path, files changed, unresolved findings) — do not carry the full reviewer/reviser/fixer reports forward in your working context. The pipeline stays lean because heavy work (reads, diffs, test logs, reasoning) lives in subagents and only short reports return; never undo that by hoarding intermediate reports or reading a full diff/test log into your own context.
 - **Fresh contexts.** Every task runs in a fresh subagent. This is the whole point — prevents context bloat on medium/large plans.
 - **One retry.** Each task gets at most one diagnostic retry. If it fails twice, stop.
-- **Review is delegated, not duplicated.** Step 5 runs the loop defined in `~/.claude/commands/exec/review-loop.md` — that file is the single source of truth. Improve the reviewer there and it flows here automatically. The loop is bounded to at most 2 fix rounds; reviewers are read-only, only fixers touch code, nits never trigger a fix round.
+- **Two delegated review loops, neither duplicated.** Plan review (Step 2.5) runs `~/.claude/commands/exec/plan-review.md`; code review (Step 5) runs `~/.claude/commands/exec/review-loop.md`. Each file is the single source of truth for its loop — improve the reviewer there and it flows here automatically. Both are bounded to 2 rounds; reviewers are read-only, only revisers/fixers edit (plan review edits the plan `.md`, code review edits code).
+- **Shift left; ask before guessing.** Catch incoherence at the plan (Step 2.5) before code is written. Plan review applies only contradictions the spec/intent settles; a genuine design fork stops the run and asks the user rather than baking a guess into every task.
 - **Dependency order.** Never execute a task before its dependencies are complete. If a dependency failed, skip dependent tasks (mark as SKIPPED).
 - **Print status.** After each task, print a status line so the user can follow along.
 - **No commits.** Do not create git commits. Leave all changes uncommitted.

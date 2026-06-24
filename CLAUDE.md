@@ -51,11 +51,8 @@ Use **Conventional Commits** format for all commit messages.
 [optional footer]
 ```
 
-## gstack
+## Web browsing
 
-- Use the `/browse` skill from gstack for **all web browsing**.
+- Use the `playwright-cli` skill for **interactive browsing** — JS-rendered pages, login/auth, clicking, form fill, screenshots.
+- Use the built-in `WebSearch` / `WebFetch` tools for **search and reading static pages**.
 - **Never** use `mcp__claude-in-chrome__*` tools.
-
-### Available skills
-
-`/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`, `/retro`, `/investigate`, `/document-release`, `/codex`, `/cso`, `/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`

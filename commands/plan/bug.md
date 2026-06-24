@@ -6,6 +6,7 @@ Create a plan in `SPEC/PLAN/*.md` to fix the bug described below.
 
 - Research the codebase to understand and reproduce the bug.
 - Be surgical — fix the root cause with minimal changes. Don't scope-creep.
+- If the fix spans more than one task and they must agree on something (a shared type, a format/rendering convention, an ordering), hoist that invariant into a `## Shared Contract` section and have each task reference it — never let one task assume what another does without instructing it. (Single-task fixes can omit the section.)
 - Each task's **Tests** field is its gate, scoped to that task's change — name the specific test files/specs (a bug fix should include a regression test that fails before / passes after) plus the cheapest covering check (typecheck/build). Do NOT write "run the full suite" per task; run only the impacted tests. The full suite runs in two places only — a first baseline task (if a green starting point matters) and the end (`Validation Commands`).
 - If you need a new library, note it in the `Notes` section.
 
@@ -31,6 +32,9 @@ Create a plan in `SPEC/PLAN/*.md` to fix the bug described below.
 
 ## Relevant Files
 <list files relevant to the bug with brief rationale. New files go under an h3 'New Files' section.>
+
+## Shared Contract
+<invariants that span MORE THAN ONE task — properties the tasks must AGREE on: shared types/enums, a format/rendering convention, ordering, API/return shapes. Define each ONCE here; tasks reference it instead of restating or assuming it. Omit this section for single-task fixes or when no task depends on another's output convention.>
 
 ## Tasks
 

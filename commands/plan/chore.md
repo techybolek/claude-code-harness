@@ -6,6 +6,7 @@ Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
 
 - Research the codebase to understand existing patterns before planning.
 - Keep it simple and thorough — get it right in one pass.
+- Hoist cross-task invariants into a `## Shared Contract` section. If two or more tasks must agree on something — a shared type/enum, a format/rendering convention, an ordering, an API shape — state it ONCE there and have each task reference it. Never let one task assume what another does without instructing that other task to do it.
 - Each task's **Tests** field is its gate, scoped to that task's change — name the specific test files/specs to write or run plus the cheapest covering check (typecheck/build). Do NOT write "run the full suite" per task: presentation/config-only tasks gate on build + preserved load-bearing selectors; logic tasks run only the impacted tests. The full suite runs in two places only — a first baseline task (if a green starting point matters) and the end (`Validation Commands`).
 
 ## Plan Format
@@ -18,6 +19,9 @@ Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
 
 ## Relevant Files
 <list files relevant to the chore with brief rationale. New files go under an h3 'New Files' section.>
+
+## Shared Contract
+<invariants that span MORE THAN ONE task — properties the tasks must AGREE on: shared types/enums, a format/rendering convention, ordering, API/return shapes. Define each ONCE here; tasks reference it instead of restating or assuming it. Omit this section if no task depends on another task's output convention.>
 
 ## Tasks
 
