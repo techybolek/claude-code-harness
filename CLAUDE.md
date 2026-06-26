@@ -10,7 +10,6 @@
 - If it's hard to explain, it's too complex
 
 ### YAGNI (You Aren't Gonna Need It)
-- Only implement what's needed NOW
 - No speculative features or "just in case" code
 - Delete unused code immediately - don't comment it out
 
