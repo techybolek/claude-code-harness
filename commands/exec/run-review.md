@@ -55,7 +55,7 @@ Catch plan incoherence before writing any code — the cheapest place to fix it.
 3. Act on the result:
    - **PASS** (or PASS after revisions) — the plan `.md` may have been edited in place; **re-read it and re-parse tasks (Step 2)** before executing, since the reviser may have changed task content. Then go to Step 3.
    - **NEEDS_DECISION** — **STOP.** Surface the decision(s) to the user and do not execute. Running a plan with an unresolved contradiction just bakes the wrong choice into code.
-   - **UNRESOLVED** — **STOP.** Report the remaining findings; do not execute an incoherent plan.
+   - **UNRESOLVED** — **STOP.** Report the remaining findings; do not execute an incoherent plan. Offer the user only: (a) re-plan/split the flagged task, or (b) apply the final DETERMINED fixes and re-run plan review. **Never offer to execute the plan as-is** — that bakes the known incoherence into every downstream task. Note that all-DETERMINED findings reaching UNRESOLVED signal a non-converging plan defect (usually one overloaded task), not a one-more-round-away fix.
 
 ### Step 3: Execute Tasks
 

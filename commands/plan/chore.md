@@ -8,6 +8,8 @@ Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
 - Keep it simple and thorough — get it right in one pass.
 - Hoist cross-task invariants into a `## Shared Contract` section. If two or more tasks must agree on something — a shared type/enum, a format/rendering convention, an ordering, an API shape — state it ONCE there and have each task reference it. Never let one task assume what another does without instructing that other task to do it.
 - Each task's **Tests** field is its gate, scoped to that task's change — name the specific test files/specs to write or run plus the cheapest covering check (typecheck/build). Do NOT write "run the full suite" per task: presentation/config-only tasks gate on build + preserved load-bearing selectors; logic tasks run only the impacted tests. The full suite runs in two places only — a first baseline task (if a green starting point matters) and the end (`Validation Commands`).
+- Reference tests by their `describe`/`it` name or file — **never by line number**. Line numbers drift and read as plan defects to the reviewer, generating a fresh finding on every review pass.
+- When a behavior change forces several existing tests to change, give the test updates their own task (or a Shared-Contract invariant the test task references) rather than enumerating per-assertion edits inside the behavior task. An overloaded "change behavior + rewrite its tests" task is the most common plan-review non-convergence cause: each adversarial review pass surfaces a new layer of fixes in it faster than the revise loop can drain them.
 
 ## Plan Format
 

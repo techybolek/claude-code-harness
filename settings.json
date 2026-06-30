@@ -1,5 +1,6 @@
 {
-  "model": "sonnet",
+  "includeCoAuthoredBy": false,
+  "model": "opus",
   "hooks": {
     "Stop": [
       {
@@ -26,9 +27,14 @@
       }
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/hooks/statusline.sh"
+  },
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": false
   },
   "skipDangerousModePermissionPrompt": true,
-  "theme": "dark"
+  "theme": "dark",
+  "editorMode": "vim"
 }

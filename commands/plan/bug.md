@@ -8,6 +8,8 @@ Create a plan in `SPEC/PLAN/*.md` to fix the bug described below.
 - Be surgical — fix the root cause with minimal changes. Don't scope-creep.
 - If the fix spans more than one task and they must agree on something (a shared type, a format/rendering convention, an ordering), hoist that invariant into a `## Shared Contract` section and have each task reference it — never let one task assume what another does without instructing it. (Single-task fixes can omit the section.)
 - Each task's **Tests** field is its gate, scoped to that task's change — name the specific test files/specs (a bug fix should include a regression test that fails before / passes after) plus the cheapest covering check (typecheck/build). Do NOT write "run the full suite" per task; run only the impacted tests. The full suite runs in two places only — a first baseline task (if a green starting point matters) and the end (`Validation Commands`).
+- Reference tests by their `describe`/`it` name or file — **never by line number**. Line numbers drift and read as plan defects to the reviewer, generating a fresh finding on every review pass.
+- When a behavior change forces several existing tests to change, give the test updates their own task (or a Shared-Contract invariant the test task references) rather than enumerating per-assertion edits inside the behavior task. An overloaded "change behavior + rewrite its tests" task is the most common plan-review non-convergence cause: each adversarial review pass surfaces a new layer of fixes in it faster than the revise loop can drain them.
 - If you need a new library, note it in the `Notes` section.
 
 ## Plan Format

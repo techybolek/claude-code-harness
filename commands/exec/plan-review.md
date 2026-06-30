@@ -111,6 +111,8 @@ A coherence review of the plan at {plan-file-path} found contradictions with det
 
 After the reviser reports, return to Step 1 for a fresh review. **Maximum 2 revise rounds.** If the verdict is still NEEDS_WORK after the second round, record `Plan: UNRESOLVED` with the remaining findings and go to Step 3. If a reviser reports FAILURE, do the same immediately.
 
+**Convergence check.** If the cap is hit and the remaining findings still concentrate in a *single task* — each round surfacing NEW determined findings there rather than the same one re-surfacing — that task is under-decomposed; more point-fixes won't converge. Record `Plan: UNRESOLVED — task T{N} needs re-planning` and, in the report, recommend re-planning/splitting T{N} (per `plan/feature.md`: don't bundle a behavior change with its test rewrites). Do NOT imply another revise round would resolve it.
+
 ### Step 3: Report
 
 Print:
