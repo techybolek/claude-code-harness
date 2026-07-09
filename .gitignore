@@ -17,3 +17,5 @@ hooks/security-gate.sh
 !scripts/**
 !settings.json
 !CLAUDE.md
+!workflows/
+!workflows/**

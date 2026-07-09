@@ -88,6 +88,8 @@ Implement this task from the plan at {plan-file-path}:
   - Presentation/markup/config-only change (no business logic): build/typecheck + confirm any load-bearing selectors (`data-testid`, ids, form names) are preserved (grep them). Skip the full unit suite — it does not exercise rendered output.
 - The full suite runs in exactly two places: the baseline (first/T0 task) and Step 4 final validation. Not per task.
 - If a suite is gated on an external prerequisite that is currently down (e.g. a blocked network host, no DB), say so and do not count its pre-existing failures as yours. Do not escalate (no sudo) to chase env flakiness.
+- **Backend (mocha) gates:** always pass `--exit --timeout 0` (or use the `backend/package.json` npm scripts, which all carry `--exit`). Bare `npx mocha <file>` HANGS after tests pass because the MSSQL pool keeps the event loop alive — a hang, not a failure.
+- **Hard time wall — never grind on a slow gate.** Backend tests are fast: a single file and even the full parallel suite both finish in ~1–2 min. Wrap EVERY backend gate in `timeout 180` (`timeout 180 npx mocha --exit --timeout 0 <file>`, `timeout 180 npm test`). If a gate hits its wall, it is a hang/env problem (VPN/DB down or a missing `--exit`), NOT a code bug: kill it (`pkill -f mocha`), check the DB socket (`timeout 5 bash -c 'exec 3<>/dev/tcp/172.23.7.5/1433' && echo up || echo DOWN`), and if it's env, report the blocker to the user and stop — do not open an extended diagnostic that keeps re-running a hanging command.
 - Whatever gate you run MUST pass (excluding the pre-existing env failures noted above). If it fails on your change, fix the code (not the tests).
 
 ## Report
@@ -125,7 +127,7 @@ A task implementation failed. Fix it.
 1. Read the plan for context.
 2. Examine the current codebase — check files that were supposed to be created/modified.
 3. Identify what went wrong and FIX it.
-4. Run the task's scoped `Tests:` gate (impacted tests only, not the full suite) until it passes.
+4. Run the task's scoped `Tests:` gate (impacted tests only, not the full suite) until it passes — but under a hard time wall. Backend mocha must use `--exit --timeout 0` wrapped in `timeout 120`; the suite normally finishes in ~1.5 min. A "test timeout / hang" that clears the wall is almost always the `--exit` bug or a downed DB/VPN, NOT a code defect — verify that hypothesis FIRST (retry once with `--exit`, check the DB socket) before treating it as a real failure. Do not re-run a hanging command repeatedly; if it's env, report the blocker and stop.
 
 ## Report
 **STATUS:** SUCCESS or FAILURE
