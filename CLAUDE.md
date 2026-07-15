@@ -22,12 +22,6 @@ In all interactions be extremely concise and prioritize brevity over style.
 - Each test must be independent and isolated
 - No shared mutable state between tests
 
-### Test Workflow
-1. Write test BEFORE implementation (TDD is required, not optional)
-2. Run existing tests before making changes
-3. Run all tests after changes
-4. Never commit with failing tests
-
 ### Real Tests Over Mocks
 - Real integration tests are strongly preferred over mocks. Mocks are never a replacement for real tests.
 - Every test must add real value — don't write tests just to inflate coverage or say you have them. YAGNI applies to tests too.

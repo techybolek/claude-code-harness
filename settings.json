@@ -35,6 +35,7 @@
     "typescript-lsp@claude-plugins-official": false
   },
   "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
   "theme": "dark",
   "editorMode": "vim"
 }
