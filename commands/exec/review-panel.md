@@ -44,8 +44,10 @@ Report in review-loop.md's exact "### Review" format.
 **The Codex panelist** is a Bash call (`run_in_background: true`):
 
 ```
-codex exec --sandbox read-only --ephemeral -C {repo-root} -o {scratchpad}/codex-review.md "{the same reviewer prompt as above, with lens: cross-model end-to-end trace — trace each changed behavior end-to-end (request params → route validation → controller/SQL → response keys → UI/export consumers) instead of reading diff hunks; hunt absence defects: behavior with no test that would fail if it were removed, pre-existing tests/code obsoleted by a contract change in the diff}"
+codex exec --sandbox read-only --ephemeral -C {repo-root} -o {scratchpad}/codex-review.md - < {scratchpad}/codex-prompt.md
 ```
+
+where `{scratchpad}/codex-prompt.md` is written first (stdin via `-` avoids shell-quoting the prompt) and contains: {the same reviewer prompt as above, with lens: cross-model end-to-end trace — trace each changed behavior end-to-end (request params → route validation → controller/SQL → response keys → UI/export consumers) instead of reading diff hunks; hunt absence defects: behavior with no test that would fail if it were removed, pre-existing tests/code obsoleted by a contract change in the diff}
 
 Read `{scratchpad}/codex-review.md` when it finishes. **Availability-tolerant:** if `codex` is missing, errors, or hasn't finished within ~10 minutes of the three Agent panelists completing, kill it and proceed with the 3-panel merge — never block the pipeline on the external CLI; record `codex: unavailable` in the report.
 
