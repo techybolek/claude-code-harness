@@ -83,6 +83,7 @@ const AGENT_RESULT = {
     filesChanged: { type: 'array', items: { type: 'string' } },
     testOutput: { type: 'string' },
     issues: { type: 'string' },
+    discoveries: { type: 'array', items: { type: 'string' } },
   },
 }
 
@@ -106,6 +107,13 @@ const CODEX_CODE_OUT = withUnavailable(CODE_REVIEW_OUT)
 // sonnet = implementer/retry/validation/reviser/fixer; haiku = mechanical plan parse.
 // ---------- shared prompt fragments ----------
 const RESULT_NOTE = 'Return structured output: status (SUCCESS|FAILURE), summary (1-2 sentences), filesChanged (list), testOutput (pass/fail counts and the command), issues ("None" if none). Do NOT create git commits.'
+
+// Execute-phase tasks each start a cold agent with no memory of what earlier tasks
+// already learned — on plans with several tasks touching the same unfamiliar schema
+// (DB tables, field-naming conventions, existing helpers), every task independently
+// re-pays the same discovery cost (grepping, live DB queries, REPL probing). Carrying
+// discoveries forward turns N re-derivations into 1 discovery + (N-1) free reads.
+const DISCOVERY_ASK = 'Also return discoveries: reusable facts you had to dig for that a LATER task touching the same code/data would otherwise re-derive from scratch — real DB table/column names, field-naming conventions, existing helper functions/patterns, schema quirks. One fact per line, no task-specific narration. Empty list if nothing reusable turned up.'
 
 const TEST_GATE = `## Test gate (scope it to THIS task — do NOT blindly run the whole suite)
 - Run the task's own \`Tests:\` field verbatim. That field is the gate. If it names a scoped command, run exactly that.
@@ -224,7 +232,13 @@ Also return validationCommands: the plan's final validation commands (from a Val
     { label: `parse tasks (round ${round})`, model: 'haiku', effort: 'low', phase: 'Parse', schema: PARSED })
 }
 
-function implementerPrompt(t, isFirst, hasParallelSiblings) {
+function discoveryNote(discoveries) {
+  return discoveries.length
+    ? `\n## Discoveries from earlier tasks (reuse these — do not re-derive)\n${discoveries.map((d, i) => `${i + 1}. ${d}`).join('\n')}\n`
+    : ''
+}
+
+function implementerPrompt(t, isFirst, hasParallelSiblings, discoveries) {
   const parallelNote = hasParallelSiblings
     ? '\n- Other tasks are running IN PARALLEL in this same working tree. Touch ONLY the files listed for this task. Never edit, revert, or "clean up" other files, and ignore unrelated concurrent changes you notice in git status.'
     : ''
@@ -241,7 +255,7 @@ function implementerPrompt(t, isFirst, hasParallelSiblings) {
 **Files:** ${t.files.join(', ') || '(see plan)'}
 **Tests:** ${t.tests || '(none specified — pick the cheapest covering gate per the rules below)'}
 **Done when:** ${t.doneWhen}
-
+${discoveryNote(discoveries)}
 ## Context
 - Read the full plan file for overall context.
 - Read CLAUDE.md to discover the test runner and project conventions.
@@ -249,24 +263,24 @@ function implementerPrompt(t, isFirst, hasParallelSiblings) {
 
 ${TEST_GATE}
 
-${RESULT_NOTE}`
+${RESULT_NOTE} ${DISCOVERY_ASK}`
 }
 
-function diagnosticPrompt(t, previous) {
+function diagnosticPrompt(t, previous, discoveries) {
   return `A task implementation failed. Fix it.
 
 ## Plan file: ${planPath}
 ## Failed task: ${t.id}: ${t.title}
 ## Previous attempt result:
 ${JSON.stringify(previous, null, 2)}
-
+${discoveryNote(discoveries)}
 ## Instructions
 1. Read the plan for context.
 2. Examine the current codebase — check files that were supposed to be created/modified.
 3. Identify what went wrong and FIX it.
 4. Run the task's scoped \`Tests:\` gate (impacted tests only, not the full suite) until it passes — under a hard time wall. Backend mocha must use \`--exit --timeout 0\` wrapped in \`timeout 120\`. A "test timeout / hang" that clears the wall is almost always the \`--exit\` bug or a downed DB/VPN, NOT a code defect — verify that hypothesis FIRST (retry once with \`--exit\`, check the DB socket) before treating it as a real failure. If it is env, report status FAILURE with issues explaining the blocker; do not re-run a hanging command repeatedly.
 
-${RESULT_NOTE}`
+${RESULT_NOTE} ${DISCOVERY_ASK}`
 }
 
 function validationPrompt(validationCommands) {
@@ -495,14 +509,23 @@ try {
 const results = {}
 let execFailed = false
 let first = true
+// Reusable facts tasks dig up (DB schema, naming conventions, helpers) — carried
+// forward wave to wave so later tasks read them instead of re-deriving them. Tasks
+// in the same parallel batch each see the snapshot as of batch start (they can't see
+// each other's mid-flight discoveries, but every later wave sees everything so far).
+const discoveries = []
 
 async function runTask(t, hasParallelSiblings) {
   const isFirst = first
   first = false
-  const attempt = await agent(implementerPrompt(t, isFirst, hasParallelSiblings), { label: `${t.id}: ${t.title}`, model: 'sonnet', phase: 'Execute', schema: AGENT_RESULT })
-  if (attempt?.status === 'SUCCESS') return { ...attempt, retried: false }
+  const attempt = await agent(implementerPrompt(t, isFirst, hasParallelSiblings, discoveries), { label: `${t.id}: ${t.title}`, model: 'sonnet', phase: 'Execute', schema: AGENT_RESULT })
+  if (attempt?.status === 'SUCCESS') {
+    if (Array.isArray(attempt.discoveries)) discoveries.push(...attempt.discoveries)
+    return { ...attempt, retried: false }
+  }
   log(`${t.id} failed — spawning diagnostic retry`)
-  const retry = await agent(diagnosticPrompt(t, attempt ?? { status: 'FAILURE', summary: 'Implementer agent died with no report.' }), { label: `${t.id}: retry`, model: 'sonnet', phase: 'Execute', schema: AGENT_RESULT })
+  const retry = await agent(diagnosticPrompt(t, attempt ?? { status: 'FAILURE', summary: 'Implementer agent died with no report.' }, discoveries), { label: `${t.id}: retry`, model: 'sonnet', phase: 'Execute', schema: AGENT_RESULT })
+  if (Array.isArray(retry?.discoveries)) discoveries.push(...retry.discoveries)
   return retry ? { ...retry, retried: true } : { status: 'FAILURE', summary: 'Diagnostic agent died.', retried: true }
 }
 
