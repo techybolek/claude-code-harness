@@ -32,7 +32,7 @@ Record the `runId` from the tool result — you need it for resume. The workflow
 
 The workflow returns a structured summary. Branch on `status`:
 
-- **`NEEDS_DECISION`** — the plan has contradictions only a human can settle. Present each `{conflict, options}` via **AskUserQuestion** (one question per conflict, its options as the choices). Then relaunch the Workflow tool with the **same** `scriptPath`, `resumeFromRunId` = the recorded runId, and the **same args plus** `"decisions": [{"conflict": "...", "resolution": "the chosen option"}]`. Everything before plan review returns cached; only the review re-runs with the decisions injected. Repeat this step on the new result.
+- **`NEEDS_DECISION`** — the plan has contradictions. Default to resolving each one yourself: pick the option that (a) stays consistent with the spec's own Locked Decisions and existing codebase patterns, (b) is lowest-risk/most reversible, and (c) matches the reporting reviewer's own lean, if it expressed one. Only fall back to **AskUserQuestion** when a conflict is a genuine product/business tradeoff with no technically-correct answer (e.g., which behavior end users should see) — not for internal contract/schema/format ambiguities, which you resolve yourself. Then relaunch the Workflow tool with the **same** `scriptPath`, `resumeFromRunId` = the recorded runId, and the **same args plus** `"decisions": [{"conflict": "...", "resolution": "the chosen option"}]` **and** `"carriedFindings"`: the `determined` list from the NEEDS_DECISION result, passed back **verbatim** (do not summarize or filter it). Everything before plan review returns cached; the decisions + carried findings go straight to a reviser pass, then a single full re-review round verifies the revised plan. Repeat this step on the new result. Record every self-resolved decision (conflict + resolution + one-line reason) for the **Decisions made** section of the Step 4 report.
 - **`UNRESOLVED_PLAN`** — **STOP.** Report the remaining findings. Offer the user only: (a) re-plan/split the flagged task, or (b) apply the final DETERMINED fixes and re-run. **Never offer to execute the plan as-is.**
 - **`FAILED`** — report the failed `stage` and `reason`, then stop.
 - **`PARTIAL` / `VALIDATION_FAILED` / `COMPLETE`** — print the Execution Summary (Step 4).
@@ -54,6 +54,7 @@ Print (values come straight from the workflow's returned object):
 - **Review:** {review}
 - **Unresolved findings:** {unresolvedFindings, only if UNRESOLVED}
 - **Nits (non-blocking):** {nits + planNits, or "None"}
+- **Decisions made (no human input needed):** {conflict → resolution → reason, one per line; omit section if none}
 ```
 
 ## Rules

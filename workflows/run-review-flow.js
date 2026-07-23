@@ -18,6 +18,10 @@ export const meta = {
 // plan-review prompt, which busts the resume cache exactly there and nowhere earlier.
 const _args = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 const { inputPath, inputType, decisions = [] } = _args
+// DETERMINED findings carried across a NEEDS_DECISION pause (returned by that stop,
+// passed back verbatim on resume) — they go straight to the reviser instead of being
+// re-derived by a fresh panel, which demonstrably loses findings.
+const carriedFindings = Array.isArray(_args.carriedFindings) ? _args.carriedFindings : []
 if (!inputPath || !['plan', 'spec'].includes(inputType)) {
   return { status: 'FAILED', stage: 'input', reason: `Invalid args: inputPath=${JSON.stringify(inputPath)}, inputType=${JSON.stringify(inputType)} — need inputPath plus inputType of 'plan' or 'spec'.` }
 }
@@ -130,7 +134,7 @@ let planPath = inputPath
 function plannerPrompt() {
   return `You are a planner. Input spec: ${inputPath}
 
-1. Read the spec file in full.
+1. Read the spec file in full. **Freshness guard:** if the spec is marked superseded/obsolete or names a successor spec that replaces it, do NOT plan — return planPath = "" and summary = "SUPERSEDED: {the marking, and the successor path if named}".
 2. Classify it: **bug** (something broken, an error, a regression), **chore** (refactoring, cleanup, migration, maintenance), or **feature** (everything else — the default).
 3. Read ~/.claude/commands/plan/{type}.md for the classified type and execute it exactly as written, treating the spec file content as its $ARGUMENTS.
 4. Return structured output with planPath = the plan file path you produced, and a one-line summary. Do NOT create git commits.`
@@ -377,7 +381,7 @@ let autoPlanned = false
 if (inputType === 'spec') {
   autoPlanned = true
   const p = await agent(plannerPrompt(), { label: 'planner', model: 'opus', effort: 'high', phase: 'Plan', schema: PLANNER_OUT })
-  if (!p?.planPath) return { status: 'FAILED', stage: 'plan', reason: 'Planner did not produce a plan file.' }
+  if (!p?.planPath) return { status: 'FAILED', stage: 'plan', reason: p?.summary || 'Planner did not produce a plan file.' }
   planPath = p.planPath
   log(`Plan created: ${planPath}`)
 } else {
@@ -402,7 +406,29 @@ if (autoPlanned || parsed.tasks.length > 2) {
   const MAX_REVIEW_ROUNDS = 4
   const applied = []
   let revised = 0
-  for (let round = 1; ; round++) {
+  let round = 1
+  // Resumed after a NEEDS_DECISION pause: send the human's decisions plus the paused
+  // round's carried DETERMINED findings straight to the reviser instead of re-running
+  // the panel — a fresh panel re-derives only part of what the paused panel found and
+  // spends most of its tokens restating the chosen resolutions once per panelist. The
+  // single full reviewer at round 2 then verifies the revised plan in one coherent pass.
+  if (decisions.length) {
+    const seeded = [
+      ...decisions.map(d => `USER DECISION — conflict: ${d.conflict} RESOLUTION to apply: ${d.resolution} Apply this resolution everywhere the plan touches the conflict (task What/Tests/Done-when fields, Shared Contract rows, acceptance criteria). If the plan already reflects it, make no edit for this item.`),
+      ...carriedFindings,
+    ]
+    log(`Resuming with ${decisions.length} decision(s) + ${carriedFindings.length} carried finding(s) — reviser-first, then a single full re-review`)
+    const rev = await agent(planReviserPrompt(seeded, revised + 1), { label: `plan revise r${revised + 1}`, model: 'sonnet', phase: 'Plan review', schema: AGENT_RESULT })
+    if (rev?.status !== 'SUCCESS') {
+      return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: seeded, reason: 'Reviser failed while applying user decisions + carried findings.', nits: planNits }
+    }
+    applied.push(...seeded)
+    revised++
+    parsed = await parseTasks(revised + 1)
+    if (!parsed?.tasks?.length) return { status: 'FAILED', stage: 'parse', planPath, reason: 'Re-parse after decision revision found no tasks.' }
+    round = 2 // the lens panel already ran before the pause — resume with single full reviewers
+  }
+  for (; ; round++) {
     let r
     if (round === 1) {
       const raw = await parallel([
@@ -428,7 +454,9 @@ if (autoPlanned || parsed.tasks.length > 2) {
     if (r.needsDecision?.length) {
       // All-or-nothing: apply no DETERMINED fixes; the human decides first, then we
       // resume with `decisions` in args and re-review in one coherent pass.
-      return { status: 'NEEDS_DECISION', planPath, planReview: 'NEEDS_DECISION', needsDecision: r.needsDecision, nits: planNits }
+      // Return the DETERMINED findings too — the entry point passes them back as
+      // args.carriedFindings on resume so this round's work is not thrown away.
+      return { status: 'NEEDS_DECISION', planPath, planReview: 'NEEDS_DECISION', needsDecision: r.needsDecision, determined: r.determined ?? [], nits: planNits }
     }
     if (r.repeats?.length) {
       return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: r.repeats, reason: 'Applied resolutions did not stick — non-converging plan defect (usually one overloaded task). Re-plan or split rather than revising again.', nits: planNits }
