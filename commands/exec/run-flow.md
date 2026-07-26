@@ -6,7 +6,7 @@ description: "Workflow-driven pipeline: spec or plan → plan review → paralle
 
 You are a **thin entry point**. All orchestration — the plan review→revise loop, dependency waves, per-task retries, final validation, the code review→fix loop — lives in the workflow script at `~/.claude/workflows/run-review-flow.js`, as deterministic JavaScript rather than prose protocol. Your job: resolve the input, launch the workflow, handle its human gates, print the summary. You do no planning, coding, or reviewing yourself, and you never read a diff or test log into your own context.
 
-This is the Workflow-tool port of `exec:run-review`. Policy still lives in the canonical files — the script's agents read `~/.claude/commands/exec/plan-review.md` and `~/.claude/commands/exec/review-loop.md` for the reviewer/reviser/fixer roles (with `~/.claude/commands/exec/review-panel.md` defining the code-review lens panel), so improvements there flow here automatically.
+Policy lives in the canonical files — the script's agents read `~/.claude/commands/exec/plan-review.md` and `~/.claude/commands/exec/review-loop.md` for the reviewer/reviser/fixer roles (with `~/.claude/commands/exec/review-panel.md` defining the code-review lens panel), so improvements there flow here automatically.
 
 ## Input
 $ARGUMENTS
@@ -39,6 +39,7 @@ The workflow returns a structured summary. Branch on `status`:
   The invariant behind both: **a plan that any human or orchestrator hand-edited must never re-enter plan review.** A fresh launch resets the round counter and applied-resolutions list, so the panel gets a clean slate to ratchet stricter standards forever (observed 2026-07-24: 3 full review cycles, zero code; observed again 2026-07-25 via the hand-edit-then-re-review loophole: 8 rounds, zero code — the residual real findings surface fine in Execute's code review instead). If you use AskUserQuestion here, the option descriptions must carry the (a)/(b) definitions above verbatim in spirit — never offer "apply fixes then re-run plan review". **Never execute the plan with findings unapplied.**
 - **`FAILED`** — report the failed `stage` and `reason`, then stop.
 - **`PARTIAL` / `VALIDATION_FAILED` / `COMPLETE`** — print the Execution Summary (Step 4). When resuming a `PARTIAL` run to retry failed tasks, relaunch with `resumeFromRunId` and the previous invocation's args **byte-identical** — do not rewrite, compress, or enrich `carriedFindings` or anything else. Any changed arg busts the cache from the reviser onward and re-runs the whole plan-review loop plus every completed task live. Enrichment belongs only in a resume that intends a re-revise.
+- **After any manual fix** (a `VALIDATION_FAILED` you or the user repaired by hand, or hand-applied changes to the implementation): the ONLY sanctioned re-verify paths are (a) resume with `resumeFromRunId` + byte-identical args, or (b) launch `~/.claude/workflows/review-flow-only.js` via `scriptPath` with `args: {planPath, validationCommands}` — the standalone Validate + Code-review extraction running the same codex panel and fixer loop. **Never** fall back to `exec:review-loop` / `exec:review-panel` — single/Claude-seat reviewers, weaker than the codex panel by the 2026-07-23 decision (observed 2026-07-25: an `exec:review-loop` fallback silently ran on the wrong model and stopped short, and the manual fix shipped unreviewed).
 
 ### Step 4: Report
 
@@ -56,6 +57,7 @@ Print (values come straight from the workflow's returned object):
 - **Validation:** {validation}{ — validationIssues if FAIL}
 - **Review:** {review}
 - **Unresolved findings:** {unresolvedFindings, only if UNRESOLVED}
+- **Triage-rejected findings:** {triageRejected — panel findings the triage gate rejected as stale/duplicate/unrealistic, with rationale; omit section if empty}
 - **Nits (non-blocking):** {nits + planNits, or "None"}
 - **Decisions made (no human input needed):** {conflict → resolution → reason, one per line; omit section if none}
 ```

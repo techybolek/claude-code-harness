@@ -1,11 +1,11 @@
 ---
-description: "Implement the most recently generated spec (confirm → run-review)"
+description: "Implement the most recently generated spec (confirm → run-flow)"
 allowed-tools: Bash(ls:*), Bash(find:*), Bash(head:*), Bash(stat:*), Bash(grep:*)
 ---
 
 # Implement the Latest Spec
 
-Resolve the most recently generated spec from `spec:refine` / `spec:bug-report`, confirm it with the user, then hand it to the `run-review` pipeline. You add NO planning/coding/review logic of your own — `run-review` is the single source of truth for the build pipeline.
+Resolve the most recently generated spec from `spec:refine` / `spec:bug-report`, confirm it with the user, then hand it to the `run-flow` pipeline. You add NO planning/coding/review logic of your own — `run-flow` is the single source of truth for the build pipeline.
 
 ## Candidate specs
 
@@ -27,19 +27,19 @@ Latest spec: {path}
 Title: {title}
 Modified: {YYYY-MM-DD}
 
-Implement this with the run-review pipeline? (other recent specs:)
+Implement this with the run-flow pipeline? (other recent specs:)
   - {2nd newest path}
   - {3rd newest path}
 ```
 
 Wait for the user to confirm. If they name a different file from the list (or supply their own path), use that instead. Do not proceed without an explicit go-ahead.
 
-### Step 3: Delegate to run-review
+### Step 3: Delegate to run-flow
 
-Once confirmed, read `~/.claude/commands/exec/run-review.md` and execute its full protocol with `$ARGUMENTS` bound to the confirmed spec path. Everything from there — classify, plan, plan-review, implement, code-review, fix — is owned by that command.
+Once confirmed, read `~/.claude/commands/exec/run-flow.md` and execute its full protocol with `$ARGUMENTS` bound to the confirmed spec path. Everything from there — plan, plan-review, implement, validate, code-review, fix — is owned by that command's workflow launch.
 
 ## Rules
 
-- **No logic duplication.** This command only resolves + confirms a path; `run-review` owns the pipeline.
+- **No logic duplication.** This command only resolves + confirms a path; `run-flow` owns the pipeline.
 - **Always confirm before running.** The spec dirs contain mixed content (screenshots, status notes); never auto-launch on a guessed file.
 - **Honor an override.** If the user points at a different spec during confirmation, run that one.

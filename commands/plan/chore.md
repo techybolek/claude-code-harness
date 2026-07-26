@@ -37,7 +37,10 @@ Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
 <as many tasks as needed — no fixed number>
 
 ## Validation Commands
-<commands to run the full test suite and confirm no regressions. Discover the test runner from CLAUDE.md. All tests must pass.>
+<EXECUTABLE shell commands ONLY — every line here is run verbatim by the validation agent, and a gate that is not a runnable command does not exist. Prose, preconditions, and aspirational gates go under Notes. Commands run the full test suite and confirm no regressions; discover the test runner from CLAUDE.md. All tests must pass.>
+
+## Runtime Verification
+<only if the chore touches anything user-visible: steps the validation agent executes LIVE with the playwright-cli skill (route, element/behavior that must render, action, expected observable result). Equal in force to Validation Commands. Do NOT plan new Playwright .spec.ts files unless this repo's CI actually runs them. Omit for pure refactors/config work.>
 
 ## Notes
 <additional context, new dependencies, etc.>

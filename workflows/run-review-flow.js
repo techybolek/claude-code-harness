@@ -1,14 +1,14 @@
 export const meta = {
   name: 'run-review-flow',
   description: 'Spec/plan → plan review → implement in dependency waves → validate → code review → fix',
-  whenToUse: 'Launched by the exec:run-flow command. Deterministic Workflow port of exec:run-review.',
+  whenToUse: 'Launched by the exec:run-flow command.',
   phases: [
     { title: 'Plan', detail: 'auto-plan spec (spec input only)' },
     { title: 'Parse', detail: 'extract tasks from the plan' },
     { title: 'Plan review', detail: 'all-codex lens panel round 1, then loop-until-dry; max 4 rounds (plan-review.md policy)' },
     { title: 'Execute', detail: 'dependency waves; parallel when Files are disjoint; 1 retry per task' },
     { title: 'Validate', detail: 'full-suite cross-task validation' },
-    { title: 'Code review', detail: 'all-codex lens panel round 1 → fix loop while blocking count shrinks; plateau after 2 fixes or 4 fix rounds stops (review-panel.md policy)' },
+    { title: 'Code review', detail: 'all-codex lens panel → triage gate (stale/unrealistic findings rejected) → fix loop while confirmed count shrinks; plateau after 2 fixes or 4 fix rounds stops (review-panel.md policy)' },
   ],
 }
 
@@ -92,6 +92,20 @@ const AGENT_RESULT = {
   },
 }
 
+// Triage gate output: the reevaluator seat between panel and fixer (user decision
+// 2026-07-25). The fixer must not judge severity — disputing its own workload is a
+// conflict of interest — so a dedicated read-only seat re-verifies each finding
+// against CURRENT code (kills stale reports: 8 of 9 findings false on wf_760d1b0d)
+// and the realism floor (kills concrete-but-unreachable scenarios) before any fix
+// round is paid for. Restores review-panel.md's verify-before-fix step the port dropped.
+const TRIAGE_OUT = {
+  type: 'object', required: ['confirmed', 'rejected'],
+  properties: {
+    confirmed: { type: 'array', items: { type: 'string' } },
+    rejected: { type: 'array', items: { type: 'string' } },
+  },
+}
+
 const CODE_REVIEW_OUT = {
   type: 'object', required: ['verdict'],
   properties: {
@@ -136,6 +150,14 @@ const TEST_GATE = `## Test gate (scope it to THIS task — do NOT blindly run th
 - **Backend (mocha) gates:** always pass \`--exit --timeout 0\` (or use the \`backend/package.json\` npm scripts, which all carry \`--exit\`). Bare \`npx mocha <file>\` HANGS after tests pass because the MSSQL pool keeps the event loop alive — a hang, not a failure.
 - **Hard time wall — never grind on a slow gate.** Backend tests are fast: a single file and the full parallel suite both finish in ~1-2 min. Wrap EVERY backend gate in \`timeout 180\` (\`timeout 180 npx mocha --exit --timeout 0 <file>\`, \`timeout 180 npm test\`). If a gate hits its wall, it is a hang/env problem (VPN/DB down or a missing \`--exit\`), NOT a code bug: kill it (\`pkill -f mocha\`), check the DB socket (\`timeout 5 bash -c 'exec 3<>/dev/tcp/172.23.7.5/1433' && echo up || echo DOWN\`), and if it's env, report status FAILURE with issues explaining the blocker — do not keep re-running a hanging command.
 - Whatever gate you run MUST pass (excluding the pre-existing env failures noted above). If it fails on your change, fix the code (not the tests).`
+
+// Realism floor (2026-07-25 postmortem, admin-financial-override): codex can always
+// construct a *concrete* failure scenario (interleaved requests, 2^53 precision,
+// whitespace input) — the old floors filtered vagueness, not implausibility, and
+// nothing downstream could push back on YAGNI grounds (2 fix rounds burned on a
+// plan-mandated concurrency proof that still ended unresolved). The spec is the
+// authority on rigor: every user decision was captured there; the run is autonomous.
+const REALISM_RULE = `Realism floor: a blocking finding's failure scenario must be reachable by a realistic actor through the app's actual entry points — the UI as built or the documented API contract. Scenarios requiring inputs the UI cannot produce, concurrency the deployment does not actually exhibit, or data magnitudes outside the domain's real ranges are nits. Rigor machinery (locks, concurrency proofs, fault injection, extra precision handling) is warranted only where the spec/plan explicitly asks for it — an unrequested rigor upgrade is a nit, never blocking.`
 
 // Round-1 panel: independent reviewers with distinct focus lenses. All existing
 // seams are present from the start — a diverse panel catches in one round what a
@@ -182,8 +204,8 @@ function codexPlanReviewerPrompt(lens, round = 1, applied = [], knownNits = []) 
     ? `\n## Nits already reported in earlier rounds — append this block verbatim to codex's prompt\nThese are known and non-blocking (the reviser applies the trivial ones). Do NOT re-report one, and do NOT escalate one to blocking unless you can state a concrete failure scenario the earlier round lacked — a known nit resurfacing as blocking costs a full extra review round.\n${knownNits.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
     : ''
   const role = lens
-    ? `Add this lens line: "You are one of ${REVIEW_LENSES.length} parallel independent reviewers, each with a different focus. Run ALL of the checks, but dig deepest on YOUR lens — ${lens.key}: ${lens.focus} Report anything blocking you find regardless of lens."`
-    : `Tell codex it is the single round-${round} re-reviewer verifying a just-revised plan: run ALL of the checks unscoped in one coherent pass, and report EVERY finding it can see this round — each one held back costs a full extra review round. Also append this severity floor verbatim: "Severity floor for this re-review round: report as blocking (DETERMINED/NEEDS_DECISION) only incoherence that would make implementation fail or produce conflicting artifacts — an implementer following the plan as written would produce broken or contradictory work. Upgrades that merely make a test, gate, or audit more rigorous, exhaustive, or precise are nits."`
+    ? `Add this lens line: "You are one of ${REVIEW_LENSES.length} parallel independent reviewers, each with a different focus. Run ALL of the checks, but dig deepest on YOUR lens — ${lens.key}: ${lens.focus} Report anything blocking you find regardless of lens." Also append this realism floor verbatim: "${REALISM_RULE}"`
+    : `Tell codex it is the single round-${round} re-reviewer verifying a just-revised plan: run ALL of the checks unscoped in one coherent pass, and report EVERY finding it can see this round — each one held back costs a full extra review round. Also append this severity floor verbatim: "Severity floor for this re-review round: report as blocking (DETERMINED/NEEDS_DECISION) only incoherence that would make implementation fail or produce conflicting artifacts — an implementer following the plan as written would produce broken or contradictory work. Upgrades that merely make a test, gate, or audit more rigorous, exhaustive, or precise are nits." Also append this realism floor verbatim: "${REALISM_RULE}"`
   return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex plan panelists' : 'the cross-model Codex plan re-reviewer'}. You do NOT review the plan yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
 1. Read ~/.claude/commands/exec/plan-review.md in full.
@@ -233,8 +255,11 @@ Also return validationCommands: the plan's final validation commands (from a Val
 }
 
 function discoveryNote(discoveries) {
+  // Sorted copy: live runs collect discoveries in wave-COMPLETION order, which a
+  // cache replay cannot reproduce — an order change here busts every later wave's
+  // prompt cache on resume (observed: wf_d6d0d013 re-ran 5 completed tasks live).
   return discoveries.length
-    ? `\n## Discoveries from earlier tasks (reuse these — do not re-derive)\n${discoveries.map((d, i) => `${i + 1}. ${d}`).join('\n')}\n`
+    ? `\n## Discoveries from earlier tasks (reuse these — do not re-derive)\n${[...discoveries].sort().map((d, i) => `${i + 1}. ${d}`).join('\n')}\n`
     : ''
 }
 
@@ -293,26 +318,62 @@ ${cmds}
 
 This is the ONE full-suite run after baseline. Wrap backend mocha in \`timeout 180\` with \`--exit --timeout 0\`. Run every command in the FOREGROUND — never \`run_in_background\` (ending your turn while waiting on a background command kills the task without a report). Skip suites whose external prerequisite is confirmed down and note them; report pre-existing env failures separately from genuine regressions.
 
-Return structured output: status SUCCESS only if there are no genuine regressions (env-blocked suites noted in issues do not fail the run), summary, testOutput, issues. Do NOT create git commits.`
+Gates beyond the commands:
+- **Skipped ≠ pass.** A test that covers a plan acceptance criterion but is SKIPPED or not run (missing fixture, env var, login state) is a FAILURE of that criterion, not a pass — name the criterion in issues. A green suite that never executed the acceptance test proves nothing.
+- **Runtime Verification.** If the plan has a Runtime Verification section, execute every step live with the playwright-cli skill against the running app: open the route, assert the element/behavior actually renders, perform the action, verify the observable outcome. Report each step's observed result in testOutput. A step you could not execute is a FAILURE with the blocker named. Static checks (build/tsc) never substitute for a runtime step — framework wiring (DI, routing, template rendering) fails invisibly to the compiler.
+
+Return structured output: status SUCCESS only if there are no genuine regressions AND no acceptance criterion is covered only by a skipped/unexecuted test AND every Runtime Verification step passed (env-blocked suites noted in issues do not fail the run), summary, testOutput, issues. Do NOT create git commits.`
 }
 
 // Lens keys must match the table in review-panel.md — definitions live there only.
 const CODE_LENSES = ['correctness', 'resilience', 'tests']
 
-function codexCodeReviewerPrompt(lens, round = 1) {
+function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = []) {
+  // applied (prior fix rounds) + disputed (triage-gate rejections) close the fix-loop
+  // blind spot from the 2026-07-25 postmortem: r1 found the missing Edit-button wiring,
+  // the fixer wired the WRONG component (tsc-verified), and r2 — reviewing the diff
+  // cold — never noticed the fix missed the finding's scenario. Detection was fine;
+  // the loop dropped the thread.
+  const appliedNote = applied.length
+    ? `\n## Fixes applied in earlier rounds — append this block verbatim to codex's prompt\nFor EACH finding below, verify the fix actually lies on the code path the finding's scenario exercises: read the fix, then trace the scenario's entry point (route config → the component the route really renders → its template/inheritance chain; or caller → callee) and confirm it reaches the changed code. A fix that compiles but sits on a different component/route/path than the scenario described is NOT fixed — re-report it as blocking prefixed "UNFIXED:". If the fix does address the scenario, do not re-litigate it for rigor.\n${applied.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
+    : ''
+  const disputedNote = disputed.length
+    ? `\n## Findings the triage gate REJECTED as stale, duplicate, or unrealistic — append this block verbatim to codex's prompt\nEach carries the gate's classification and rationale. Re-report one as blocking ONLY if you can state a concrete trigger path through the app's real entry points that refutes the rationale; otherwise do not re-report it.\n${disputed.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
+    : ''
   const role = lens
-    ? `Add a lens line: codex is one of ${CODE_LENSES.length} parallel independent reviewers of the same diff and must run ALL the angles but dig deepest on the \`${lens}\` lens — copy that lens's full definition from review-panel.md's Lenses table into codex's prompt (codex cannot read ~/.claude), and tell it to report every blocking finding it sees regardless of lens.`
-    : `Tell codex it is the single round-${round} re-reviewer verifying the diff after a fix round: run ALL the lens angles — copy every lens definition from review-panel.md's Lenses table into codex's prompt (codex cannot read ~/.claude) — in one coherent pass. Also append this severity floor verbatim: "Severity floor for this re-review round: report as blocking ONLY defects with a concrete failure scenario — a specific input or state under which the code produces wrong results, crashes, or a test passes/fails falsely. Changes that merely make a test, wait, or check more rigorous, exhaustive, or precise without such a scenario are nits."`
+    ? `Add a lens line: codex is one of ${CODE_LENSES.length} parallel independent reviewers of the same diff and must run ALL the angles but dig deepest on the \`${lens}\` lens — copy that lens's full definition from review-panel.md's Lenses table into codex's prompt (codex cannot read ~/.claude), and tell it to report every blocking finding it sees regardless of lens. Also append this realism floor verbatim: "${REALISM_RULE}"`
+    : `Tell codex it is the single round-${round} re-reviewer verifying the diff after a fix round: run ALL the lens angles — copy every lens definition from review-panel.md's Lenses table into codex's prompt (codex cannot read ~/.claude) — in one coherent pass. Also append this severity floor verbatim: "Severity floor for this re-review round: report as blocking ONLY defects with a concrete failure scenario — a specific input or state under which the code produces wrong results, crashes, or a test passes/fails falsely. Changes that merely make a test, wait, or check more rigorous, exhaustive, or precise without such a scenario are nits." Also append this realism floor verbatim: "${REALISM_RULE}"`
   return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex code panelists' : 'the cross-model Codex code re-reviewer'} (wrapper contract: ~/.claude/commands/exec/review-panel.md, "The Codex panelist" section). You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
 1. Read ~/.claude/commands/exec/review-panel.md and ~/.claude/commands/exec/review-loop.md in full.
 2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions). ${role} Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
 3. ${codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`)}
-
+${appliedNote}${disputedNote}
 Structured output:
 - verdict: PASS | NEEDS_WORK | UNAVAILABLE
 - blocking: list of strings, one per blocking finding from codex's report — "file:line — what's wrong — the input/scenario that triggers it — expected fix"
 - nits: list of strings`
+}
+
+function triagePrompt(blocking, round) {
+  return `You are the finding-triage gate between the code-review panel and the fixer, round ${round}. Independent parallel reviewers produced the blocking findings below. Before any fix work is dispatched, re-evaluate each one against the CURRENT code and the plan: reviewers sometimes report from stale expectations (a change already applied) or construct concrete-but-unreachable scenarios, and a wasted fix round costs far more than this check.
+
+Plan (scope and acceptance authority): ${planPath}${specPath ? `\nSpec (intent authority): ${specPath}` : ''}
+
+## Findings
+${blocking.map((f, i) => `${i + 1}. ${f}`).join('\n')}
+
+For EACH finding, read the current code at its location — plus enough surrounding context to judge it (callers, route config, the component a route actually renders, templates/inheritance) — and classify:
+- **CONFIRMED**: the defect is present in the current code AND its failure scenario is reachable by a realistic actor through the app's actual entry points (the UI as built, the documented API contract).
+- **STALE**: the claimed defect is not present in the current code (already fixed, or the reviewer misread) — cite file:line evidence.
+- **UNREALISTIC**: technically constructible but the scenario requires inputs the UI cannot produce, concurrency the deployment does not exhibit, or data magnitudes outside the domain's real ranges — or it mandates rigor machinery (locks, concurrency proofs, fault injection, precision handling) the spec/plan never asked for. One-line rationale grounded in the spec/plan or the code.
+- **DUPLICATE**: same defect as another finding — confirm one, mark the rest duplicates of it.
+
+Judge severity, never difficulty: a hard-to-fix real defect is CONFIRMED. When genuinely uncertain whether a defect is real, CONFIRM it — the fixer's own verification is the next check; this gate exists to kill clear noise, not to shave real work. You are read-only: modify no files, no git commits.
+
+Return structured output:
+- confirmed: the findings to fix, verbatim (empty if none survive)
+- rejected: one string per STALE/UNREALISTIC/DUPLICATE finding — "{the finding} — {CLASSIFICATION} — {rationale/evidence}"`
 }
 
 function fixerPrompt(blocking, round) {
@@ -323,9 +384,11 @@ function fixerPrompt(blocking, round) {
 ## Blocking findings
 ${blocking.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 
-Findings may come from independent parallel reviewers and can overlap — where two describe the same defect, fix it once. Fix every blocking finding; do not address nits. Verify ONLY what you changed. No git commits.
+Every finding above already passed a triage gate that verified it against the current code and a realism floor — Step 2's "dispute" option is NOT available here: fix every finding. Findings can still overlap — where two describe the same defect, fix it once. Do not address nits. No git commits.
 
-Return structured output: status (SUCCESS|FAILURE), summary (what was fixed per finding), filesChanged, testOutput (the specific verification you ran), issues ("None" if none).`
+What you verify is the finding's FAILURE SCENARIO, not your edit. Logic findings: typecheck/build the touched files and run the single covering test (write one if the finding was a missing/weak test). Rendering/wiring/reachability findings (element not rendered, provider not injected, route never reaches the code): typecheck/build is NOT sufficient — trace the actual chain (route config → the component the route REALLY renders → its template/inheritance chain), cite file:line for every hop, and confirm your fix lies ON that chain. If the finding names a component, verify it is the one the route renders BEFORE fixing it; if it is not, fix the one that is and say so in summary. If a fix genuinely cannot be verified without running the app, state exactly what runtime evidence is missing in issues — never claim it fixed on a compile alone.
+
+Return structured output: status (SUCCESS|FAILURE), summary (what was fixed per finding, including the reachability trace for wiring fixes), filesChanged, testOutput (the specific verification you ran), issues ("None" if none).`
 }
 
 // ---------- graph helpers (plain JS — deterministic, no agent involved) ----------
@@ -565,9 +628,11 @@ phase('Code review')
 let review = 'NOT RUN'
 let reviewNits = []
 let unresolvedFindings = []
+let triageRejected = []
 if (!execFailed && validation === 'PASS') {
   let fixed = 0
   let prevBlocking = Infinity
+  const appliedFixes = [] // per fix round: findings given to the fixer + its own account — r≥2 verifies each fix against its finding's scenario
   for (let round = 1; ; round++) {
     let r
     if (round === 1) {
@@ -589,7 +654,7 @@ if (!execFailed && validation === 'PASS') {
         nits: panel.flatMap(p => p.nits ?? []),
       }
     } else {
-      r = await agent(codexCodeReviewerPrompt(null, round), { label: `code review r${round}:codex`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })
+      r = await agent(codexCodeReviewerPrompt(null, round, appliedFixes, triageRejected), { label: `code review r${round}:codex`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })
       if (!r) { review = 'UNRESOLVED'; unresolvedFindings = ['Reviewer agent died.']; break }
       if (r.verdict === 'UNAVAILABLE') { review = 'UNRESOLVED'; unresolvedFindings = [`Codex CLI unavailable at code-review round ${round} — fixes not re-verified.`]; break }
     }
@@ -598,18 +663,36 @@ if (!execFailed && validation === 'PASS') {
       review = fixed ? `PASS (panel, after ${fixed} fix rounds)` : 'PASS (panel)'
       break
     }
+    // Triage gate (reevaluator seat, user decision 2026-07-25): re-verify each
+    // blocking finding against the current code + the realism floor BEFORE paying
+    // for a fix round. Convergence/plateau checks run on the CONFIRMED count — raw
+    // panel counts include exactly the noise this gate removes. If the triage agent
+    // dies, fail open: fix everything rather than silently drop findings.
+    let blocking = r.blocking ?? []
+    if (blocking.length) {
+      const t = await agent(triagePrompt(blocking, round), { label: `triage r${round}`, model: 'sonnet', phase: 'Code review', schema: TRIAGE_OUT })
+      if (t) {
+        triageRejected.push(...(t.rejected ?? []))
+        blocking = t.confirmed ?? []
+        log(`triage r${round}: ${blocking.length} confirmed, ${(t.rejected ?? []).length} rejected`)
+      }
+    }
+    if (!blocking.length) {
+      review = fixed ? `PASS (panel; round-${round} findings all triaged out, after ${fixed} fix rounds)` : `PASS (panel; round-${round} findings all triaged out)`
+      break
+    }
     // Convergence-aware stop (2026-07-24, wf_11c56662): the old hard 2-fix cap bailed
     // with 1 small finding left while the loop was converging 9 → 3 → 1 blocking. Keep
     // fixing while the blocking count strictly shrinks; a plateau or rise after 2 fixes
     // is the fix-introduces-new-bug ping-pong signature and stops honestly. Absolute
     // backstop: 4 fix rounds no matter the trajectory.
-    const blocking = r.blocking ?? []
     if ((fixed >= 2 && blocking.length >= prevBlocking) || fixed >= 4) {
       review = 'UNRESOLVED'; unresolvedFindings = blocking; break
     }
     prevBlocking = blocking.length
     const fix = await agent(fixerPrompt(blocking, fixed + 1), { label: `fix r${fixed + 1}`, model: 'sonnet', phase: 'Code review', schema: AGENT_RESULT })
     if (fix?.status !== 'SUCCESS') { review = 'UNRESOLVED'; unresolvedFindings = blocking; break }
+    appliedFixes.push(`Fix round ${fixed + 1} — findings addressed:\n${blocking.map((b, i) => `  ${i + 1}. ${b}`).join('\n')}\nFixer's account: ${fix.summary}`)
     fixed++
   }
 }
@@ -626,6 +709,7 @@ return {
   validationIssues,
   review,
   unresolvedFindings,
+  triageRejected,
   nits: reviewNits,
   planNits,
 }

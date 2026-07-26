@@ -10,6 +10,7 @@ Create a plan in `SPEC/PLAN/*.md` to implement the feature described below.
 - Each task's **Tests** field is its gate, scoped to that task's change — name the specific test files/specs to write or run plus the cheapest covering check (typecheck/build). Do NOT write "run the full suite" per task: presentation/config-only tasks gate on build + preserved load-bearing selectors (`data-testid`, ids, form names); logic tasks run only the impacted tests (`vitest related`/`--changed`, the specific spec). The full suite runs in two places only — a first baseline task (if a green starting point matters) and the end (`Validation Commands`).
 - Reference tests by their `describe`/`it` name or file — **never by line number**. Line numbers drift and read as plan defects to the reviewer, generating a fresh finding on every review pass.
 - When a behavior change forces several existing tests to change, give the test updates their own task (or a Shared-Contract invariant the test task references) rather than enumerating per-assertion edits inside the behavior task. An overloaded "change behavior + rewrite its tests" task is the most common plan-review non-convergence cause: each adversarial review pass surfaces a new layer of fixes in it faster than the revise loop can drain them.
+- UI-facing acceptance criteria are gated by the `Runtime Verification` section — live playwright-cli steps the validation agent executes against the running app — never by authored Playwright `.spec.ts` files unless this repo's CI actually runs them. An authored-but-never-run spec is a fake gate: it skips silently and passes by omission, while build/tsc cannot see framework wiring (DI, routing, template rendering) by construction.
 - Produce as many or as few tasks as the work requires. Don't force structure.
 
 ## Plan Format
@@ -59,7 +60,10 @@ So that <benefit/value>
 <overall feature-level criteria — the feature is complete when ALL of these are true>
 
 ## Validation Commands
-<commands to run the full test suite and confirm no regressions. Discover the test runner from CLAUDE.md. Include end-to-end testing. All tests must pass.>
+<EXECUTABLE shell commands ONLY — every line here is run verbatim by the validation agent, and a gate that is not a runnable command does not exist (a "# Frontend E2E ..." comment inside this block was once silently skipped and a feature shipped that never rendered). Prose, preconditions, and aspirational gates go under Notes. Commands run the full test suite and confirm no regressions; discover the test runner from CLAUDE.md. All tests must pass.>
+
+## Runtime Verification
+<REQUIRED whenever the feature changes anything user-visible; omit only when nothing user-visible changed. Steps the validation agent executes LIVE with the playwright-cli skill — for each step: the route to open, the element/behavior that must actually render, the action to perform, the expected observable result. These gates are equal in force to Validation Commands: a step that cannot be executed fails validation.>
 
 ## Notes
 <additional context, future considerations, new dependencies, etc.>

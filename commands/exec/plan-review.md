@@ -54,6 +54,7 @@ This is a plan review, not a code audit. You may read a few files to confirm a s
 - **Blocking:** any instance of 1–5 above. For EACH blocking finding, you MUST tag its resolution:
   - **DETERMINED** — the correct fix is unambiguous from the spec/intent or from plain logic. State the exact resolution and which task(s) to change (e.g. "make the task that owns X actually instruct the change the other task assumes, so both produce the same shape"). The reviser will apply this verbatim.
   - **NEEDS_DECISION** — reconciling the contradiction requires a genuine product/design choice that the plan and spec do not settle (e.g. "which of two conflicting conventions is canonical?"). State the conflict and the 2–3 concrete options. Do NOT pick one. This will be surfaced to the human, never auto-applied.
+- **Realism floor (applies to all Blocking):** the failure an implementer would produce must be reachable by a realistic actor through the app's actual entry points — the UI as built or the documented API contract. Mandating test-rigor machinery the spec never asked for (locks, concurrency proofs, fault injection, extra precision handling) is a nit, never blocking: the spec is the authority on rigor, and unrequested machinery is new surface for coherence defects in every later round.
 - **Nit:** plan-level polish — wording, task ordering preference, naming. Non-blocking.
 
 ## Do NOT modify the plan or any file. You are read-only.

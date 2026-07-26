@@ -5,6 +5,8 @@ model: sonnet
 
 # Review & Fix Loop
 
+> **Lockstep note (for editors, not executors):** code-review policy is duplicated across 4 files that must be edited together — this file, `review-panel.md` (lenses + codex wrapper), and the embedded prompt copies in `~/.claude/workflows/run-review-flow.js` and `~/.claude/workflows/review-flow-only.js` (REALISM_RULE, triage/fixer prompts, severity floors). A change landed in only some of them means the workflow and standalone paths review to different standards. Plan-review policy has the same split: `plan-review.md` + `run-review-flow.js`.
+
 You are an orchestrator. Your job is to run an automated review→fix loop on uncommitted changes. Stay lightweight — you spawn subagents, track results, and report. You do no coding yourself. Reviewers are read-only; only fixers touch code.
 
 ## Input
@@ -59,6 +61,7 @@ Your value is adversarial analysis, NOT test execution. The implementor has alre
    - **Blocking:** a real bug, security issue, regression, missed "Done when" criterion, a test that would let a real bug through, or (from the spec) a diff that contradicts a touched Acceptance Criterion/Edge Case or does Out-of-Scope work. **Also blocking:** (a) a *user-visible defect* — rendered output that is wrong, inconsistent, misaligned, or contradicts a stated design/parity goal; "it's only cosmetic" does NOT downgrade something the user actually sees. (b) an *internal contradiction* between plan tasks, or between plan and spec — do NOT silently pick a side and bury it; flag it and state which task's intent is left unmet.
    - **Nit:** code-hygiene items with **zero** user-visible or behavioral effect — internal naming, comments, micro-optimizations. A subjective preference with no intent reference ("I'd add padding") stays a nit; a visible inconsistency or an unmet stated goal does not. List nits; they do not block.
 5. Be specific and falsifiable. For each blocking finding, give the concrete input/scenario that breaks it and the expected fix. A vague "this might be fragile" is not blocking — either prove it or downgrade to a nit.
+6. Be realistic as well as concrete. The scenario must be reachable by an actual user or caller through the app's real entry points — the UI as built or the documented API contract. Inputs the UI cannot produce, concurrency the deployment does not actually exhibit, or data magnitudes outside the domain's real ranges are nits. Rigor machinery (locks, concurrency proofs, fault injection, extra precision handling) is warranted only where the spec/plan explicitly asks for it — an unrequested rigor upgrade is a nit, never blocking.
 6. Do NOT modify any files. You are read-only.
 
 ## Report
@@ -85,21 +88,25 @@ A code review of the uncommitted changes{ implementing the plan at {plan-file-pa
 
 ## Instructions
 1. {If a plan file exists:} Read the plan for context. {If a spec file exists:} The spec at {spec-file-path} is read-only context for intent — consult it to understand a finding, but DO NOT expand work beyond the plan's tasks. Stay within this diff's scope. Examine the current code at each finding's location.
-2. Fix every blocking finding. Do not address nits.
-3. Verify ONLY what you changed: typecheck/build the touched files, and run the single test(s) that cover your fix (write one if the finding was a missing/weak test). Do not re-run the whole suite — that adds no signal.
+2. For each blocking finding, either FIX it or DISPUTE it. Do not address nits.
+   - **Dispute** a finding only when its failure scenario is not reachable through the app's actual entry points (inputs the UI cannot produce, concurrency the deployment does not exhibit, magnitudes outside the domain's real data), or it demands rigor machinery (locks, concurrency proofs, fault injection, precision handling) the spec/plan never asked for. List it under **Disputed** verbatim plus a one-line rationale grounded in the spec/plan or the code. A dispute is a scope judgment — never dispute a finding merely because it is hard.
+3. Verify the finding's FAILURE SCENARIO, not just your edit:
+   - Logic fixes: typecheck/build the touched files and run the single test(s) that cover your fix (write one if the finding was a missing/weak test). Do not re-run the whole suite — that adds no signal.
+   - Rendering/wiring/reachability fixes (element not rendered, provider not injected, route never reaches the code): typecheck/build is NOT sufficient — such defects are invisible to the compiler by construction (e.g. Angular constructor DI is not inherited; a subclass that drops a base's injected param compiles fine and injects null). Trace the actual chain — route config → the component the route REALLY renders → its template/inheritance chain — citing file:line per hop, and confirm your fix lies ON that chain. If the finding names a component, verify it is the one the route renders BEFORE fixing it; if it is not, fix the one that is and say so. If verification genuinely requires running the app, state exactly what runtime evidence is missing under Issues — never report a wiring fix as verified on a compile alone.
 4. Do not create git commits.
 
 ## Report
 **STATUS:** SUCCESS or FAILURE
-**Summary:** {what was fixed, per finding}
+**Summary:** {what was fixed, per finding — include the reachability trace for wiring fixes}
 **Files Changed:** {list}
 **Verification:** {the specific check you ran for your fix and its result}
+**Disputed:** {findings declined as unrealistic/out-of-scope, each with its rationale, or "None"}
 **Issues:** {remaining problems, or "None"}
 ```
 
 #### Loop
 
-After the fixer reports, return to Step 1 for a fresh review. **Maximum 2 fix rounds.** If the verdict is still NEEDS_WORK after the second fix round, record `Review: UNRESOLVED` with the remaining blocking findings and go to Step 3. If a fixer reports FAILURE, do the same immediately.
+After the fixer reports, return to Step 1 for a fresh review. Pass the fixer's **Disputed** list (if any) into the next reviewer prompt as context: a disputed finding may be re-reported as blocking ONLY with a concrete trigger path through the app's real entry points that refutes the dispute rationale; otherwise it stays disputed and does not count as blocking. Carry all disputes into the Step 3 summary. **Maximum 2 fix rounds.** If the verdict is still NEEDS_WORK after the second fix round, record `Review: UNRESOLVED` with the remaining blocking findings and go to Step 3. If a fixer reports FAILURE, do the same immediately.
 
 ### Step 3: Report
 
@@ -119,6 +126,7 @@ Print:
 - **Stay lightweight.** You are the orchestrator. Spawn subagents, report. Do not write code yourself.
 - **Review is critical analysis, not test execution.** The implementor already ran the tests. The reviewer's job is to read the code and find what's wrong from multiple angles. Re-running the existing suite to ask "do tests pass?" adds no signal and is forbidden — run a test only to confirm a specific suspicion.
 - **Bounded loop.** The review→fix loop runs at most 2 fix rounds. Reviewers are read-only; only fixers touch code. Nits never trigger a fix round.
-- **Fixers verify only their fix.** Typecheck the touched files and run the single covering test — never the full suite.
+- **Fixers verify the finding's scenario, scoped to their fix.** Typecheck the touched files and run the single covering test — never the full suite. Wiring/rendering fixes additionally require the route→component→template trace; a compile alone never verifies them.
+- **Fixers may dispute, not silently skip.** Unrealistic or spec-unrequested-rigor findings are returned as Disputed with a rationale; they re-block only when a reviewer refutes the rationale with a concrete trigger path.
 - **Plan bounds scope; spec checks direction.** The plan's tasks define what this diff is responsible for — that's the acceptance gate. The spec is used only to catch intent contradictions and out-of-scope work the plan can't self-check. Never flag (or fix) feature-level work the plan deferred to other tasks.
 - **No commits.** Do not create git commits. Leave all changes uncommitted.
