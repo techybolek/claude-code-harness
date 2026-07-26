@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: 'Launched by the exec:run-flow command.',
   phases: [
     { title: 'Plan', detail: 'auto-plan spec (spec input only)' },
-    { title: 'Parse', detail: 'extract tasks from the plan' },
+    { title: 'Parse', detail: 'deterministic parse via parse-plan.cjs (haiku ferries the ~1KB skeleton; model extraction only as fallback)' },
     { title: 'Plan review', detail: 'all-codex lens panel round 1, then loop-until-dry; max 4 rounds (plan-review.md policy)' },
     { title: 'Execute', detail: 'dependency waves; parallel when Files are disjoint; 1 retry per task' },
     { title: 'Validate', detail: 'full-suite cross-task validation' },
@@ -43,6 +43,11 @@ const PLANNER_OUT = {
   properties: { planPath: { type: 'string' }, summary: { type: 'string' } },
 }
 
+// Skeleton only — what/tests/doneWhen deliberately absent: implementers read the full
+// plan file themselves (by design), so ferrying those fields through a model costs
+// thousands of output tokens for text the plan already holds verbatim. The workflow
+// needs ids/titles (labels), files+dependsOn (wave/batch planning), and
+// validationCommands (executed verbatim).
 const PARSED = {
   type: 'object', required: ['tasks', 'validationCommands'],
   properties: {
@@ -50,11 +55,10 @@ const PARSED = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['id', 'title', 'what', 'files', 'tests', 'doneWhen', 'dependsOn'],
+        required: ['id', 'title', 'files', 'dependsOn'],
         properties: {
-          id: { type: 'string' }, title: { type: 'string' }, what: { type: 'string' },
+          id: { type: 'string' }, title: { type: 'string' },
           files: { type: 'array', items: { type: 'string' } },
-          tests: { type: 'string' }, doneWhen: { type: 'string' },
           dependsOn: { type: 'array', items: { type: 'string' } },
         },
       },
@@ -127,7 +131,8 @@ const CODEX_CODE_OUT = withUnavailable(CODE_REVIEW_OUT)
 // round-2+ single re-reviewers, plan and code) are codex via haiku wrappers —
 // opus reviews only in offline harness analysis/tuning sessions (/reflect,
 // notes/harness-tuning-log.md), never inside this workflow.
-// haiku = codex wrappers + mechanical plan parse;
+// haiku = codex wrappers + parse ferry (runs parse-plan.cjs and copies its skeleton
+// JSON; model extraction only as fallback when the script rejects the plan);
 // sonnet = implementer/retry/validation/reviser/fixer.
 // ---------- shared prompt fragments ----------
 const RESULT_NOTE = 'Run long commands in the FOREGROUND with an explicit timeout (e.g. `timeout 590 <cmd>`) — never `run_in_background`: ending your turn while waiting on a background command kills the task without a report. Return structured output: status (SUCCESS|FAILURE), summary (1-2 sentences), filesChanged (list), testOutput (pass/fail counts and the command), issues ("None" if none). Do NOT create git commits.'
@@ -258,16 +263,43 @@ Remember: edit the plan .md IN PLACE, preserve the parseable \`### T{N}: {title}
 Return structured output: status (SUCCESS|FAILURE), summary (what changed per finding), filesChanged, issues ("None" if none).`
 }
 
+// ---------- plan parse: deterministic script, model extraction only as fallback ----------
+// The actual parsing lives in ~/.claude/workflows/parse-plan.cjs (single source of
+// truth) — deterministic regex extraction against the pinned template structure
+// (`### T{N}: {title}` + bold bullet fields, which the reviser is contractually bound
+// to preserve), validated before printing. Workflow scripts have no filesystem access
+// (probed 2026-07-26: no fs/require/process/fetch in the sandbox), so a haiku agent
+// runs the script and copies its ~1KB skeleton JSON — it ferries the parser's output,
+// it does not interpret the plan. The agent falls back to model extraction only when
+// the script reports ok:false (non-conforming plan) or fails to run.
+function validateParsed(p) {
+  if (!p?.tasks?.length) return false
+  const ids = new Set()
+  for (const t of p.tasks) {
+    if (!/^T\d+$/.test(t.id) || ids.has(t.id) || !t.title) return false
+    ids.add(t.id)
+  }
+  return p.tasks.every(t => t.dependsOn.every(d => ids.has(d)))
+}
+
 async function parseTasks(round) {
+  const parsed = await agent(`Run this exact command with the Bash tool (nothing else first):
+
+node ~/.claude/workflows/parse-plan.cjs "${planPath}"
+
+(Parse round ${round}.)
+
+- If it prints {"ok":true,...}: return its \`tasks\` and \`validationCommands\` EXACTLY as printed — a verbatim copy, no edits, no re-derivation, no additions.
+- ONLY if the command fails or prints {"ok":false,...}: read the plan at ${planPath} yourself and extract every task section with a heading like \`### T{N}: {title}\`. For each task return: id ("T{N}" exactly as in the heading), title, files (the Files field as individual full-repo-path entries; empty list if unclear), dependsOn (task ids like "T2" from the Depends on field; empty list for none/"-"). Also return validationCommands: the shell commands from the plan's Validation Commands section (empty list if none). Note the script's failure reason in your summary.`,
+    { label: `parse plan (round ${round})`, model: 'haiku', effort: 'low', phase: 'Parse', schema: PARSED })
+  if (validateParsed(parsed)) return parsed
+  log(`Plan parse returned an invalid task skeleton (round ${round}) — retrying with direct model extraction`)
   return agent(`Read the plan file at ${planPath} in full. Parse round ${round}.
 
 Extract every task section with a heading like \`### T{N}: {title}\`. For each task return:
 - id: "T{N}" exactly as in the heading
 - title
-- what: the What field
-- files: the Files field split into individual file paths (empty list if unclear)
-- tests: the Tests field verbatim (empty string if absent)
-- doneWhen: the Done when field
+- files: the Files field split into individual full repo paths (empty list if unclear)
 - dependsOn: the Depends on field as a list of task ids like "T2" (empty list for none/"-")
 
 Also return validationCommands: the plan's final validation commands (from a Validation/Verification section), as a list of shell commands (empty list if none).`,
@@ -303,13 +335,11 @@ function implementerPrompt(t, isFirst, hasParallelSiblings, discoveries) {
   return `Implement this task from the plan at ${planPath}:
 
 ## Task ${t.id}: ${t.title}
-**What:** ${t.what}
 **Files:** ${t.files.join(', ') || '(see plan)'}
-**Tests:** ${t.tests || '(none specified — pick the cheapest covering gate per the rules below)'}
-**Done when:** ${t.doneWhen}
+**What / Tests / Done when:** defined VERBATIM in the plan's \`### ${t.id}:\` section — that text is the authority on this task's scope, test gate, and acceptance criteria. If the Tests field is absent, pick the cheapest covering gate per the rules below.
 ${advisoryNote(t.id)}${discoveryNote(discoveries)}
 ## Context
-- Read the full plan file for overall context.
+- Read the full plan file FIRST — it defines your task (the \`### ${t.id}:\` section) and the overall context.
 - Read CLAUDE.md to discover the test runner and project conventions.
 - Implement the task: write code, write tests.${parallelNote}${baselineNote}${rerunNote}
 

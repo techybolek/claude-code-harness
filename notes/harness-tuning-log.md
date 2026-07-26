@@ -4,6 +4,20 @@ Rolling log of reviewer/panel evaluations and the harness changes they produced.
 
 ---
 
+## 2026-07-26 (night) — Parse phase: deterministic `parse-plan.cjs` replaces the haiku model parse (`run-review-flow.js` + new `workflows/parse-plan.cjs`, uncommitted)
+
+User-requested change, iterated twice in one session. v1 (haiku echoes the raw plan → JS parses in-script) shipped and immediately proved WORSE on latency: the echo ferried the whole 40–47KB plan through haiku (~12k output tokens, ~3 min on `wf_7ccc4fae` — vs ~1 min for the old model parse). User called it out. Root constraint verified by live probe (`wf_29f6c466`): the workflow sandbox has NO `fs`/`require`/`process`/`fetch` and `eval` is blocked — every byte entering a script goes through some model's output, so "free" in-script file reading is impossible. v2 minimizes the ferry instead:
+
+- **Parser is a real Node script** — `~/.claude/workflows/parse-plan.cjs` (single source of truth, runs in ~30ms): regex extraction against the pinned template structure, internal validation (unique `T\d+` ids, non-empty title/what/doneWhen, deps resolve), prints `{ok:true, tasks:[{id,title,files,dependsOn}], validationCommands}` or `{ok:false, reason}`.
+- **The Parse-phase haiku agent is now a ferry**: runs the script via Bash and copies its ~1–2KB skeleton JSON verbatim (~300–500 output tokens, seconds of model time — wall time is agent spawn). It falls back to model extraction (same slim shape) only when the script prints `ok:false`; a second-layer model-parse agent fires only if the returned skeleton fails the in-workflow `validateParsed` gate.
+- **PARSED schema slimmed to the skeleton** — what/tests/doneWhen dropped. They existed only to be pasted into implementer prompts, but implementers read the full plan anyway (by design, user-confirmed 07-24); `implementerPrompt` now points at the task's `### T{N}:` plan section as the verbatim authority instead of embedding a copy. Files stays embedded (parallel-sibling discipline needs it).
+- **Files-field resolver** handles the three shorthands real plans use: directory listed once + bare filenames, bare filenames inheriting the previous full path's directory, `.html`/`.scss` extension fragments. Any unresolvable token → whole field `[]` (task runs alone; never false-disjoint parallelism). Verified: admin-financial-override resolves all 7 tasks fully, T6∥T7 disjointness preserved.
+- **Corpus check: 28/29 historical TPV2 plans parse and validate**; the one `ok:false` (`progressive-dot-loading-maplibre-2026-07-08.md`) has no `### T{N}` headings (pre-template) — correct fallback behavior.
+- **Cache note:** parse prompts AND implementer prompts changed — resuming any pre-edit run re-runs parse and every Execute task live. `wf_7ccc4fae` (in flight) runs its persisted v1 copy: its parses stay slow-echo; do not resume it against the new script mid-Execute.
+- Syntax-checked (async-wrapped `node --check`). Watch the first run for: ferry fidelity (does haiku copy the JSON without editing), fallback firing on a conforming plan, and whether implementers behave identically without the embedded What/Tests/Done-when (they still get Files + the section pointer).
+
+---
+
 ## 2026-07-26 (evening) — `wf_e87d6402` plan-review cycle re-diagnosed mid-run: coordination-channel severity floor + advisory channel + resume context fix (session `d22b69ea`, orchestrating session `d1575832`)
 
 8th run on the admin-financial-override spec (fresh practice relaunch, spec input, new Opus plan). User report: "same vicious time and token wasting review cycle." Evaluated live at ~30 min in: r1 panel 16 findings → 9-min sonnet revise → r2: 1 new determined → revise → r3: 1 new determined + 1 NEEDS_DECISION → full stop → orchestrator auto-resolved (protocol-clean, spec-grounded) → resume reviser-first → post-resume re-review PASSed → Execute (progressing normally at eval end; plan review total ~35 min, zero nitpicks).
