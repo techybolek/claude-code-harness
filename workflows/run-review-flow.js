@@ -5,10 +5,10 @@ export const meta = {
   phases: [
     { title: 'Plan', detail: 'auto-plan spec (spec input only)' },
     { title: 'Parse', detail: 'extract tasks from the plan' },
-    { title: 'Plan review', detail: 'lens + codex panel round 1, then loop-until-dry; max 4 rounds (plan-review.md policy)' },
+    { title: 'Plan review', detail: 'all-codex lens panel round 1, then loop-until-dry; max 4 rounds (plan-review.md policy)' },
     { title: 'Execute', detail: 'dependency waves; parallel when Files are disjoint; 1 retry per task' },
     { title: 'Validate', detail: 'full-suite cross-task validation' },
-    { title: 'Code review', detail: 'lens + codex panel round 1 → fix loop, max 2 rounds (review-panel.md policy)' },
+    { title: 'Code review', detail: 'all-codex lens panel round 1 → fix loop while blocking count shrinks; plateau after 2 fixes or 4 fix rounds stops (review-panel.md policy)' },
   ],
 }
 
@@ -31,6 +31,11 @@ const specPath = inputType === 'spec' ? inputPath : null
 // now-resolved environmental blocker actually re-runs live. Downstream tasks that were
 // never dispatched (loop broke at the failure) are fresh calls and run automatically.
 const forceRerun = new Set(Array.isArray(_args.forceRerun) ? _args.forceRerun : [])
+// Relaunch-after-manual-apply escape hatch (added 2026-07-24 after the playwright-e2e
+// plan looped 3 full review cycles): a fresh launch resets round/applied state, so
+// re-entering the panel after the orchestrator hand-applied UNRESOLVED findings just
+// gives a fresh reviewer another chance to ratchet. Skip straight to Execute instead.
+const skipPlanReview = _args.skipPlanReview === true
 
 // ---------- schemas ----------
 const PLANNER_OUT = {
@@ -97,16 +102,21 @@ const CODE_REVIEW_OUT = {
 }
 
 // Codex wrapper outputs: same shapes plus UNAVAILABLE — the merge drops an
-// UNAVAILABLE panelist instead of failing the round (the external CLI is optional;
-// 3 lens reports are a quorum, per review-panel.md).
+// UNAVAILABLE panelist instead of failing the round. All reviewer seats are codex:
+// a full codex CLI outage stops the review honestly (FAILED at plan review,
+// UNRESOLVED at code review) rather than silently passing unreviewed work.
 const withUnavailable = s => ({ ...s, properties: { ...s.properties, verdict: { enum: [...s.properties.verdict.enum, 'UNAVAILABLE'] } } })
 const CODEX_PLAN_OUT = withUnavailable(PLAN_REVIEW_OUT)
 const CODEX_CODE_OUT = withUnavailable(CODE_REVIEW_OUT)
 
-// Model policy (mirrors run-review.md): opus = planner + all reviewers;
-// sonnet = implementer/retry/validation/reviser/fixer; haiku = mechanical plan parse.
+// Model policy: opus = planner ONLY. All reviewer seats (round-1 lens panels and
+// round-2+ single re-reviewers, plan and code) are codex via haiku wrappers —
+// opus reviews only in offline harness analysis/tuning sessions (/reflect,
+// notes/harness-tuning-log.md), never inside this workflow.
+// haiku = codex wrappers + mechanical plan parse;
+// sonnet = implementer/retry/validation/reviser/fixer.
 // ---------- shared prompt fragments ----------
-const RESULT_NOTE = 'Return structured output: status (SUCCESS|FAILURE), summary (1-2 sentences), filesChanged (list), testOutput (pass/fail counts and the command), issues ("None" if none). Do NOT create git commits.'
+const RESULT_NOTE = 'Run long commands in the FOREGROUND with an explicit timeout (e.g. `timeout 590 <cmd>`) — never `run_in_background`: ending your turn while waiting on a background command kills the task without a report. Return structured output: status (SUCCESS|FAILURE), summary (1-2 sentences), filesChanged (list), testOutput (pass/fail counts and the command), issues ("None" if none). Do NOT create git commits.'
 
 // Execute-phase tasks each start a cold agent with no memory of what earlier tasks
 // already learned — on plans with several tasks touching the same unfamiliar schema
@@ -145,70 +155,60 @@ function plannerPrompt() {
 1. Read the spec file in full. **Freshness guard:** if the spec is marked superseded/obsolete or names a successor spec that replaces it, do NOT plan — return planPath = "" and summary = "SUPERSEDED: {the marking, and the successor path if named}".
 2. Classify it: **bug** (something broken, an error, a regression), **chore** (refactoring, cleanup, migration, maintenance), or **feature** (everything else — the default).
 3. Read ~/.claude/commands/plan/{type}.md for the classified type and execute it exactly as written, treating the spec file content as its $ARGUMENTS.
-4. Return structured output with planPath = the plan file path you produced, and a one-line summary. Do NOT create git commits.`
+4. Planning rule (non-convergence guard — 2 observed review-loop failures): a task must NOT bundle a behavior change with the design of its own test-verification machinery (fault-injection seams, cleanup/DB-restore contracts, baseline-capture procedures). Put that machinery in the Shared Contracts section — or a dedicated prerequisite task — so reviewers can check it once, coherently, instead of re-litigating it inside every task that touches it.
+5. Return structured output with planPath = the plan file path you produced, and a one-line summary. Do NOT create git commits.`
 }
 
 const DECIDED_NOTE = decisions.length
   ? `\n## Resolved decisions from the user\nThese settle previously-raised NEEDS_DECISION conflicts. Treat them as spec-level intent: conflicts they resolve are now DETERMINED with the chosen resolution, never NEEDS_DECISION again.\n${JSON.stringify(decisions, null, 2)}\n`
   : ''
 
-function planReviewerPrompt(round, lens, applied) {
-  const decided = DECIDED_NOTE
-  const lensNote = lens
-    ? `\nYou are one of ${REVIEW_LENSES.length} parallel independent reviewers, each with a different focus. Run ALL of plan-review.md's checks, but dig deepest on YOUR lens — ${lens.key}: ${lens.focus} Report anything blocking you find regardless of lens.\n`
-    : ''
-  const appliedNote = applied.length
-    ? `\n## Resolutions already applied in earlier rounds\nDo NOT re-report these — they are done. If one of them did NOT actually resolve its incoherence (the same seam is still broken), list it under \`repeats\` instead of \`determined\` — that signals a non-converging plan defect.\n${applied.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
-    : ''
-  return `You are the plan-reviewer subagent defined in ~/.claude/commands/exec/plan-review.md. Review round ${round}.
-
-1. Read ~/.claude/commands/exec/plan-review.md in full.
-2. Execute its Step 1 reviewer prompt exactly, with {plan-file-path} = ${planPath} and {spec-file-path} = ${specPath ?? '(none — omit spec-specific instructions)'}.
-${decided}${lensNote}${appliedNote}
-You are read-only — do NOT modify the plan or any file.
-
-Instead of its markdown report format, return structured output:
-- verdict: PASS | NEEDS_WORK
-- determined: list of strings, one per Blocking-DETERMINED finding — the incoherence, which tasks/lines conflict, and the EXACT resolution to apply. Report EVERY determined finding you can see this round, not just the most important one — each finding you hold back costs a full extra review round.
-- needsDecision: list of {conflict, options} for Blocking-NEEDS_DECISION findings (options are 2-3 concrete choices; do NOT pick one)
-- repeats: list of previously-applied resolutions whose incoherence is still present (empty on a healthy run)
-- nits: list of strings`
-}
-
-// Cross-model panelist (review-panel.md policy): codex shares no priors with the
-// Claude lens reviewers, so it catches absence defects they all miss. The wrapper
-// agent only runs the CLI and transcribes its report — it reviews nothing itself.
-// The code-side lens lives in review-panel.md; the plan-side lens has no prose home
-// (plan lenses live in this script, like REVIEW_LENSES), so it is inlined here.
-const CODEX_WRAPPER_RULES = `Run codex from the repo root in ONE Bash call with timeout 600000: write the composed prompt to a temp file, then
-   codex exec --sandbox read-only --ephemeral -o <tmpdir>/codex-review.md - < <tmpdir>/codex-prompt.md
+// Cross-model reviewers (decided 2026-07-23 after 4 evaluated runs — see
+// notes/harness-tuning-log.md): codex holds ALL reviewer seats — the 3 lens seats
+// in round 1 and the unscoped single re-reviewer in rounds 2+. Each wrapper agent
+// only runs the CLI and transcribes its report — it reviews nothing itself.
+const codexWrapperRules = (slug) => `Run codex from the repo root in ONE Bash call with timeout 600000: write the composed prompt to a temp file, then
+   codex exec --sandbox read-only --ephemeral -o <tmpdir>/codex-review-${slug}.md - < <tmpdir>/codex-prompt-${slug}.md
+The "-${slug}" filename suffix is MANDATORY — parallel panelists share the temp dir, and unsuffixed files get overwritten by the other reviewers mid-run.
 Then read the output file and transcribe codex's findings VERBATIM into the structured output — do not re-judge, drop, merge, or add findings of your own.
 
 If the codex CLI is missing, exits non-zero, produces no output file, or hits the timeout: return verdict UNAVAILABLE with all lists empty. Never invent a review, never retry more than once.`
 
-function codexPlanReviewerPrompt() {
-  return `You are the thin wrapper for the cross-model Codex plan panelist. You do NOT review the plan yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
+function codexPlanReviewerPrompt(lens, round = 1, applied = [], knownNits = []) {
+  const appliedNote = applied.length
+    ? `\n## Resolutions already applied in earlier rounds — append this block verbatim to codex's prompt\nDo NOT re-report these — they are done. Report one prefixed "REPEAT:" ONLY if its required edit is demonstrably ABSENT from the plan — the fix was not applied at all. If the fix WAS applied but you would prefer it more rigorous, exhaustive, or precise, that is a nit, not a REPEAT and not blocking: re-litigating an applied fix with a stricter standard each round is exactly the non-convergence this check exists to stop.\n${applied.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
+    : ''
+  const knownNitsNote = knownNits.length
+    ? `\n## Nits already reported in earlier rounds — append this block verbatim to codex's prompt\nThese are known and non-blocking (the reviser applies the trivial ones). Do NOT re-report one, and do NOT escalate one to blocking unless you can state a concrete failure scenario the earlier round lacked — a known nit resurfacing as blocking costs a full extra review round.\n${knownNits.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
+    : ''
+  const role = lens
+    ? `Add this lens line: "You are one of ${REVIEW_LENSES.length} parallel independent reviewers, each with a different focus. Run ALL of the checks, but dig deepest on YOUR lens — ${lens.key}: ${lens.focus} Report anything blocking you find regardless of lens."`
+    : `Tell codex it is the single round-${round} re-reviewer verifying a just-revised plan: run ALL of the checks unscoped in one coherent pass, and report EVERY finding it can see this round — each one held back costs a full extra review round. Also append this severity floor verbatim: "Severity floor for this re-review round: report as blocking (DETERMINED/NEEDS_DECISION) only incoherence that would make implementation fail or produce conflicting artifacts — an implementer following the plan as written would produce broken or contradictory work. Upgrades that merely make a test, gate, or audit more rigorous, exhaustive, or precise are nits."`
+  return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex plan panelists' : 'the cross-model Codex plan re-reviewer'}. You do NOT review the plan yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
 1. Read ~/.claude/commands/exec/plan-review.md in full.
-2. Compose codex's prompt: plan-review.md's Step 1 reviewer prompt exactly, with {plan-file-path} = ${planPath} and {spec-file-path} = ${specPath ?? '(none — omit spec-specific instructions)'}.${DECIDED_NOTE ? ' Append the Resolved-decisions block below verbatim.' : ''} Add this lens line: "Your lens — cross-model seam trace: instead of reading task-by-task, trace every cross-task assertion end-to-end through the actual task instructions; hunt absence defects — invariants no task owns, planned tests that could not fail, tasks already satisfied by existing code."
-3. ${CODEX_WRAPPER_RULES}
-${DECIDED_NOTE}
+2. Compose codex's prompt: plan-review.md's Step 1 reviewer prompt exactly, with {plan-file-path} = ${planPath} and {spec-file-path} = ${specPath ?? '(none — omit spec-specific instructions)'}.${DECIDED_NOTE ? ' Append the Resolved-decisions block below verbatim.' : ''} ${role} The composed prompt must be fully self-contained: paste the prompt text itself — never instruct codex to read files under ~/.claude.
+3. ${codexWrapperRules(lens ? `plan-r${round}-${lens.key}` : `plan-r${round}`)}
+${DECIDED_NOTE}${appliedNote}${knownNitsNote}
 Structured output:
 - verdict: PASS | NEEDS_WORK | UNAVAILABLE
 - determined: list of strings, one per Blocking-DETERMINED finding from codex's report (the incoherence, which tasks conflict, the exact resolution)
 - needsDecision: list of {conflict, options} from its Blocking-NEEDS_DECISION findings
-- repeats: empty list
+- repeats: list of strings, one per "REPEAT:" finding from codex's report (empty otherwise)
 - nits: list of strings`
 }
 
-function planReviserPrompt(determined, round) {
+function planReviserPrompt(determined, round, nits = []) {
+  const nitsNote = nits.length
+    ? `\n## Nits from the same review round (non-blocking — best-effort)\nApply a nit ONLY if it is a trivial local edit (wording fix, an exact threshold, removing a stale phrase). Skip any nit that would expand scope, add a new contract/task, or that you are unsure how to apply — list skipped nits in issues. Nits never justify restructuring.\n${nits.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
+    : ''
   return `You are the plan-reviser subagent defined in ~/.claude/commands/exec/plan-review.md (its Step 2 reviser prompt). Revise round ${round}.
 
 1. Read ~/.claude/commands/exec/plan-review.md in full and follow its Step 2 reviser instructions exactly, with {plan-file-path} = ${planPath}${specPath ? ` and {spec-file-path} = ${specPath}` : ' (no spec)'}.
 
 ## Findings to apply (each includes its exact resolution)
 ${determined.map((f, i) => `${i + 1}. ${f}`).join('\n')}
-
+${nitsNote}
 Findings may come from independent parallel reviewers and can overlap — where two findings describe the same incoherence, apply the fix once.
 
 Remember: edit the plan .md IN PLACE, preserve the parseable \`### T{N}: {title}\` structure and field names exactly, do not expand scope, do not touch code, no git commits.
@@ -291,7 +291,7 @@ function validationPrompt(validationCommands) {
 
 ${cmds}
 
-This is the ONE full-suite run after baseline. Wrap backend mocha in \`timeout 180\` with \`--exit --timeout 0\`. Skip suites whose external prerequisite is confirmed down and note them; report pre-existing env failures separately from genuine regressions.
+This is the ONE full-suite run after baseline. Wrap backend mocha in \`timeout 180\` with \`--exit --timeout 0\`. Run every command in the FOREGROUND — never \`run_in_background\` (ending your turn while waiting on a background command kills the task without a report). Skip suites whose external prerequisite is confirmed down and note them; report pre-existing env failures separately from genuine regressions.
 
 Return structured output: status SUCCESS only if there are no genuine regressions (env-blocked suites noted in issues do not fail the run), summary, testOutput, issues. Do NOT create git commits.`
 }
@@ -299,29 +299,15 @@ Return structured output: status SUCCESS only if there are no genuine regression
 // Lens keys must match the table in review-panel.md — definitions live there only.
 const CODE_LENSES = ['correctness', 'resilience', 'tests']
 
-function codeReviewerPrompt(round, lens) {
-  const lensNote = lens
-    ? `\n3. You are one of ${CODE_LENSES.length} parallel independent reviewers of the same diff. Read ~/.claude/commands/exec/review-panel.md and apply YOUR lens — \`${lens}\` — as its Lenses table defines: run ALL the angles, dig deepest on your lens, and report every blocking finding you can see regardless of lens (each finding you hold back costs a full extra round).\n`
-    : ''
-  return `You are the reviewer subagent defined in ~/.claude/commands/exec/review-loop.md. Review round ${round}.
+function codexCodeReviewerPrompt(lens, round = 1) {
+  const role = lens
+    ? `Add a lens line: codex is one of ${CODE_LENSES.length} parallel independent reviewers of the same diff and must run ALL the angles but dig deepest on the \`${lens}\` lens — copy that lens's full definition from review-panel.md's Lenses table into codex's prompt (codex cannot read ~/.claude), and tell it to report every blocking finding it sees regardless of lens.`
+    : `Tell codex it is the single round-${round} re-reviewer verifying the diff after a fix round: run ALL the lens angles — copy every lens definition from review-panel.md's Lenses table into codex's prompt (codex cannot read ~/.claude) — in one coherent pass. Also append this severity floor verbatim: "Severity floor for this re-review round: report as blocking ONLY defects with a concrete failure scenario — a specific input or state under which the code produces wrong results, crashes, or a test passes/fails falsely. Changes that merely make a test, wait, or check more rigorous, exhaustive, or precise without such a scenario are nits."`
+  return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex code panelists' : 'the cross-model Codex code re-reviewer'} (wrapper contract: ~/.claude/commands/exec/review-panel.md, "The Codex panelist" section). You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
-1. Read ~/.claude/commands/exec/review-loop.md in full.
-2. Execute its Step 1 reviewer prompt exactly, with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions). The plan is the scope and acceptance gate for the uncommitted diff.
-${lensNote}
-You are read-only — do NOT modify any files.
-
-Instead of its markdown report format, return structured output:
-- verdict: PASS | NEEDS_WORK
-- blocking: list of strings, one per blocking finding — "file:line — what's wrong — the input/scenario that triggers it — expected fix"
-- nits: list of strings`
-}
-
-function codexCodeReviewerPrompt() {
-  return `You are the thin wrapper for the cross-model Codex panelist defined in ~/.claude/commands/exec/review-panel.md ("The Codex panelist" section). You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
-
-1. Read ~/.claude/commands/exec/review-panel.md's Codex panelist section and ~/.claude/commands/exec/review-loop.md in full.
-2. Compose codex's prompt exactly as review-panel.md specifies: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions), plus that section's cross-model end-to-end-trace lens. Tell codex to report in review-loop.md's exact "### Review" format.
-3. ${CODEX_WRAPPER_RULES}
+1. Read ~/.claude/commands/exec/review-panel.md and ~/.claude/commands/exec/review-loop.md in full.
+2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions). ${role} Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
+3. ${codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`)}
 
 Structured output:
 - verdict: PASS | NEEDS_WORK | UNAVAILABLE
@@ -394,7 +380,7 @@ phase('Plan')
 let autoPlanned = false
 if (inputType === 'spec') {
   autoPlanned = true
-  const p = await agent(plannerPrompt(), { label: 'planner', model: 'opus', effort: 'high', phase: 'Plan', schema: PLANNER_OUT })
+  const p = await agent(plannerPrompt(), { label: 'planner', model: 'claude-opus-4-8', effort: 'high', phase: 'Plan', schema: PLANNER_OUT })
   if (!p?.planPath) return { status: 'FAILED', stage: 'plan', reason: p?.summary || 'Planner did not produce a plan file.' }
   planPath = p.planPath
   log(`Plan created: ${planPath}`)
@@ -414,11 +400,14 @@ log(`Found ${parsed.tasks.length} tasks to execute`)
 // each round surfaces NEW determined findings; a REPEAT of an applied resolution
 // means non-convergence (overloaded task) and stops immediately. Hard backstop: 4 rounds.
 phase('Plan review')
-let planReview = `SKIPPED (hand-written plan with ${parsed.tasks.length} tasks)`
+let planReview = skipPlanReview
+  ? 'SKIPPED (skipPlanReview — findings applied manually after an UNRESOLVED_PLAN stop)'
+  : `SKIPPED (hand-written plan with ${parsed.tasks.length} tasks)`
 let planNits = []
-if (autoPlanned || parsed.tasks.length > 2) {
+if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
   const MAX_REVIEW_ROUNDS = 4
   const applied = []
+  const knownNits = [] // every nit seen so far — re-reviewers get them as known/non-escalatable (a nit re-found as blocking cost a full round on wf_f72ce22c)
   let revised = 0
   let round = 1
   // Resumed after a NEEDS_DECISION pause: send the human's decisions plus the paused
@@ -445,14 +434,14 @@ if (autoPlanned || parsed.tasks.length > 2) {
   for (; ; round++) {
     let r
     if (round === 1) {
-      const raw = await parallel([
-        ...REVIEW_LENSES.map(l => () =>
-          agent(planReviewerPrompt(1, l, applied), { label: `plan review r1:${l.key}`, model: 'opus', effort: 'high', phase: 'Plan review', schema: PLAN_REVIEW_OUT })),
-        () => agent(codexPlanReviewerPrompt(), { label: 'plan review r1:codex', model: 'haiku', phase: 'Plan review', schema: CODEX_PLAN_OUT }),
-      ])
-      log(`codex plan panelist: ${raw[REVIEW_LENSES.length]?.verdict ?? 'died'}`)
+      const raw = await parallel(REVIEW_LENSES.map(l => () =>
+        agent(codexPlanReviewerPrompt(l), { label: `plan review r1:codex:${l.key}`, model: 'haiku', phase: 'Plan review', schema: CODEX_PLAN_OUT })))
       const panel = raw.filter(p => p && p.verdict !== 'UNAVAILABLE')
-      if (!panel.length) return { status: 'FAILED', stage: 'plan-review', planPath, reason: 'All panel reviewers died.' }
+      log(`codex lens panelists up: ${panel.length}/${REVIEW_LENSES.length}`)
+      if (!panel.length) {
+        const outage = raw.some(p => p?.verdict === 'UNAVAILABLE')
+        return { status: 'FAILED', stage: 'plan-review', planPath, reason: outage ? 'Codex CLI unavailable — all lens panelists returned UNAVAILABLE; plan not reviewed. Resume when codex is back.' : 'All panel reviewers died.' }
+      }
       r = {
         verdict: panel.some(p => p.verdict === 'NEEDS_WORK') ? 'NEEDS_WORK' : 'PASS',
         determined: panel.flatMap(p => p.determined ?? []),
@@ -461,10 +450,20 @@ if (autoPlanned || parsed.tasks.length > 2) {
         nits: panel.flatMap(p => p.nits ?? []),
       }
     } else {
-      r = await agent(planReviewerPrompt(round, null, applied), { label: `plan review r${round}`, model: 'opus', effort: 'high', phase: 'Plan review', schema: PLAN_REVIEW_OUT })
+      r = await agent(codexPlanReviewerPrompt(null, round, applied, knownNits), { label: `plan review r${round}:codex`, model: 'haiku', phase: 'Plan review', schema: CODEX_PLAN_OUT })
       if (!r) return { status: 'FAILED', stage: 'plan-review', planPath, reason: 'Plan reviewer agent died.' }
+      if (r.verdict === 'UNAVAILABLE') return { status: 'FAILED', stage: 'plan-review', planPath, reason: `Codex CLI unavailable at plan-review round ${round} — revised plan not verified. Resume when codex is back.` }
+    }
+    // Wrappers sometimes leave codex's "REPEAT:" prefix inside determined (seen on
+    // wf_744f8f49) — reclassify by prefix so a repeat stops the loop instead of
+    // triggering another revise round.
+    const misfiled = (r.determined ?? []).filter(f => /^\s*REPEAT:/i.test(f))
+    if (misfiled.length) {
+      r.repeats = [...(r.repeats ?? []), ...misfiled]
+      r.determined = (r.determined ?? []).filter(f => !/^\s*REPEAT:/i.test(f))
     }
     planNits = r.nits ?? []
+    knownNits.push(...planNits)
     if (r.needsDecision?.length) {
       // All-or-nothing: apply no DETERMINED fixes; the human decides first, then we
       // resume with `decisions` in args and re-review in one coherent pass.
@@ -484,7 +483,7 @@ if (autoPlanned || parsed.tasks.length > 2) {
       return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: det, reason: `Hit the ${MAX_REVIEW_ROUNDS}-round backstop with new findings still appearing.`, nits: planNits }
     }
     log(`Plan review round ${round}: ${det.length} determined finding(s) — spawning reviser`)
-    const rev = await agent(planReviserPrompt(det, revised + 1), { label: `plan revise r${revised + 1}`, model: 'sonnet', phase: 'Plan review', schema: AGENT_RESULT })
+    const rev = await agent(planReviserPrompt(det, revised + 1, planNits), { label: `plan revise r${revised + 1}`, model: 'sonnet', phase: 'Plan review', schema: AGENT_RESULT })
     if (rev?.status !== 'SUCCESS') {
       return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: det, reason: 'Reviser failed.', nits: planNits }
     }
@@ -568,37 +567,49 @@ let reviewNits = []
 let unresolvedFindings = []
 if (!execFailed && validation === 'PASS') {
   let fixed = 0
+  let prevBlocking = Infinity
   for (let round = 1; ; round++) {
     let r
     if (round === 1) {
-      // Wide first sweep: 3 lens panelists + the cross-model codex panelist in
-      // parallel (review-panel.md policy). Later rounds verify fixes — one full
-      // reviewer is the right check there.
-      const raw = await parallel([
-        ...CODE_LENSES.map(l => () =>
-          agent(codeReviewerPrompt(1, l), { label: `code review r1:${l}`, model: 'opus', effort: 'high', phase: 'Code review', schema: CODE_REVIEW_OUT })),
-        () => agent(codexCodeReviewerPrompt(), { label: 'code review r1:codex', model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT }),
-      ])
-      log(`codex panelist: ${raw[CODE_LENSES.length]?.verdict ?? 'died'}`)
+      // Wide first sweep: 3 codex lens panelists in parallel. Later rounds verify
+      // fixes — one unscoped codex reviewer is the right check there.
+      const raw = await parallel(CODE_LENSES.map(l => () =>
+        agent(codexCodeReviewerPrompt(l), { label: `code review r1:codex:${l}`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })))
       const panel = raw.filter(p => p && p.verdict !== 'UNAVAILABLE')
-      if (!panel.length) { review = 'UNRESOLVED'; unresolvedFindings = ['All panel reviewers died.']; break }
+      log(`codex lens panelists up: ${panel.length}/${CODE_LENSES.length}`)
+      if (!panel.length) {
+        const outage = raw.some(p => p?.verdict === 'UNAVAILABLE')
+        review = 'UNRESOLVED'
+        unresolvedFindings = [outage ? 'Codex CLI unavailable — all lens panelists returned UNAVAILABLE; code NOT reviewed.' : 'All panel reviewers died.']
+        break
+      }
       r = {
         verdict: panel.some(p => p.verdict === 'NEEDS_WORK') ? 'NEEDS_WORK' : 'PASS',
         blocking: panel.flatMap(p => p.blocking ?? []),
         nits: panel.flatMap(p => p.nits ?? []),
       }
     } else {
-      r = await agent(codeReviewerPrompt(round, null), { label: `code review r${round}`, model: 'opus', effort: 'high', phase: 'Code review', schema: CODE_REVIEW_OUT })
+      r = await agent(codexCodeReviewerPrompt(null, round), { label: `code review r${round}:codex`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })
       if (!r) { review = 'UNRESOLVED'; unresolvedFindings = ['Reviewer agent died.']; break }
+      if (r.verdict === 'UNAVAILABLE') { review = 'UNRESOLVED'; unresolvedFindings = [`Codex CLI unavailable at code-review round ${round} — fixes not re-verified.`]; break }
     }
     reviewNits = r.nits ?? []
     if (r.verdict === 'PASS') {
       review = fixed ? `PASS (panel, after ${fixed} fix rounds)` : 'PASS (panel)'
       break
     }
-    if (fixed >= 2) { review = 'UNRESOLVED'; unresolvedFindings = r.blocking ?? []; break }
-    const fix = await agent(fixerPrompt(r.blocking ?? [], fixed + 1), { label: `fix r${fixed + 1}`, model: 'sonnet', phase: 'Code review', schema: AGENT_RESULT })
-    if (fix?.status !== 'SUCCESS') { review = 'UNRESOLVED'; unresolvedFindings = r.blocking ?? []; break }
+    // Convergence-aware stop (2026-07-24, wf_11c56662): the old hard 2-fix cap bailed
+    // with 1 small finding left while the loop was converging 9 → 3 → 1 blocking. Keep
+    // fixing while the blocking count strictly shrinks; a plateau or rise after 2 fixes
+    // is the fix-introduces-new-bug ping-pong signature and stops honestly. Absolute
+    // backstop: 4 fix rounds no matter the trajectory.
+    const blocking = r.blocking ?? []
+    if ((fixed >= 2 && blocking.length >= prevBlocking) || fixed >= 4) {
+      review = 'UNRESOLVED'; unresolvedFindings = blocking; break
+    }
+    prevBlocking = blocking.length
+    const fix = await agent(fixerPrompt(blocking, fixed + 1), { label: `fix r${fixed + 1}`, model: 'sonnet', phase: 'Code review', schema: AGENT_RESULT })
+    if (fix?.status !== 'SUCCESS') { review = 'UNRESOLVED'; unresolvedFindings = blocking; break }
     fixed++
   }
 }
