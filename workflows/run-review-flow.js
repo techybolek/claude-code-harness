@@ -198,7 +198,7 @@ If the codex CLI is missing, exits non-zero, produces no output file, or hits th
 
 function codexPlanReviewerPrompt(lens, round = 1, applied = [], knownNits = []) {
   const appliedNote = applied.length
-    ? `\n## Resolutions already applied in earlier rounds — append this block verbatim to codex's prompt\nDo NOT re-report these — they are done. Report one prefixed "REPEAT:" ONLY if its required edit is demonstrably ABSENT from the plan — the fix was not applied at all. If the fix WAS applied but you would prefer it more rigorous, exhaustive, or precise, that is a nit, not a REPEAT and not blocking: re-litigating an applied fix with a stricter standard each round is exactly the non-convergence this check exists to stop.\n${applied.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
+    ? `\n## Resolutions already applied in earlier rounds — append this block verbatim to codex's prompt\nDo NOT re-report these — they are done. Report one prefixed "REPEAT:" ONLY if its required edit is demonstrably ABSENT from the plan — the fix was not applied at all. If the fix WAS applied but you would prefer it more rigorous, exhaustive, or precise, that is a nit, not a REPEAT and not blocking: re-litigating an applied fix with a stricter standard each round is exactly the non-convergence this check exists to stop. If an edit WAS made for the item but is defective, incomplete, or uses a different mechanism than the resolution required, report that defect as a NEW blocking-DETERMINED finding with its own exact resolution — NOT a REPEAT; REPEAT is reserved for items where no edit was attempted at all.\n${applied.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
     : ''
   const knownNitsNote = knownNits.length
     ? `\n## Nits already reported in earlier rounds — append this block verbatim to codex's prompt\nThese are known and non-blocking (the reviser applies the trivial ones). Do NOT re-report one, and do NOT escalate one to blocking unless you can state a concrete failure scenario the earlier round lacked — a known nit resurfacing as blocking costs a full extra review round.\n${knownNits.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
@@ -232,6 +232,8 @@ function planReviserPrompt(determined, round, nits = []) {
 ${determined.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 ${nitsNote}
 Findings may come from independent parallel reviewers and can overlap — where two findings describe the same incoherence, apply the fix once.
+
+Each finding's RESOLUTION is binding: apply its stated mechanism as written — do NOT substitute a design you judge equivalent or simpler, even one grounded in the live codebase (a substituted mechanism reads as "fix absent" to the next reviewer and can abort the run). If the codebase or the plan makes a resolution genuinely wrong or impossible, apply nothing for that finding and report the conflict in issues instead.
 
 Remember: edit the plan .md IN PLACE, preserve the parseable \`### T{N}: {title}\` structure and field names exactly, do not expand scope, do not touch code, no git commits.
 
@@ -460,8 +462,10 @@ log(`Found ${parsed.tasks.length} tasks to execute`)
 // ---------- Phase: Plan review (gated) ----------
 // Round 1 is a parallel lens panel (all seams exist from the start — catch them at
 // once). Later rounds are single full reviewers. Loop-until-dry: keep revising while
-// each round surfaces NEW determined findings; a REPEAT of an applied resolution
-// means non-convergence (overloaded task) and stops immediately. Hard backstop: 4 rounds.
+// each round surfaces NEW determined findings. A REPEAT of an applied resolution gets
+// ONE targeted verbatim-apply grace round (both observed repeat-stops, wf_2677abe5 and
+// wf_ead81b27, were reviser misses on a converging loop, not overloaded tasks); a
+// repeat after that stops immediately. Hard backstop: 4 rounds.
 phase('Plan review')
 let planReview = skipPlanReview
   ? 'SKIPPED (skipPlanReview — findings applied manually after an UNRESOLVED_PLAN stop)'
@@ -471,6 +475,7 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
   const MAX_REVIEW_ROUNDS = 4
   const applied = []
   const knownNits = [] // every nit seen so far — re-reviewers get them as known/non-escalatable (a nit re-found as blocking cost a full round on wf_f72ce22c)
+  let repeatGraceUsed = false
   let revised = 0
   let round = 1
   // Resumed after a NEEDS_DECISION pause: send the human's decisions plus the paused
@@ -535,7 +540,28 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
       return { status: 'NEEDS_DECISION', planPath, planReview: 'NEEDS_DECISION', needsDecision: r.needsDecision, determined: r.determined ?? [], nits: planNits }
     }
     if (r.repeats?.length) {
-      return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: r.repeats, reason: 'Applied resolutions did not stick — non-converging plan defect (usually one overloaded task). Re-plan or split rather than revising again.', nits: planNits }
+      // Grace round (2026-07-26): a first repeat goes back to the reviser as a
+      // verbatim-apply instruction (any determined findings from the same round ride
+      // along so they aren't lost). Only a repeat that survives its own targeted
+      // round — or one landing at the backstop — aborts.
+      if (repeatGraceUsed || round >= MAX_REVIEW_ROUNDS) {
+        return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: r.repeats, reason: repeatGraceUsed ? 'Repeats survived their targeted verbatim-apply grace round — non-converging plan defect. Re-plan or split rather than revising again.' : `Repeat reported at the ${MAX_REVIEW_ROUNDS}-round backstop — no room for a grace round. Re-plan or split rather than revising again.`, nits: planNits }
+      }
+      repeatGraceUsed = true
+      const graceFindings = [
+        ...r.repeats.map(f => `PREVIOUSLY REQUIRED, STILL ABSENT — apply this RESOLUTION verbatim, mechanism included; delete any earlier edit that contradicts it: ${f}`),
+        ...(r.determined ?? []),
+      ]
+      log(`Plan review round ${round}: ${r.repeats.length} repeat(s) — one grace revise round, resolutions apply verbatim`)
+      const rev = await agent(planReviserPrompt(graceFindings, revised + 1, planNits), { label: `plan revise r${revised + 1} (repeat grace)`, model: 'sonnet', phase: 'Plan review', schema: AGENT_RESULT })
+      if (rev?.status !== 'SUCCESS') {
+        return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: r.repeats, reason: 'Reviser failed during the repeat grace round.', nits: planNits }
+      }
+      applied.push(...graceFindings)
+      revised++
+      parsed = await parseTasks(revised + 1)
+      if (!parsed?.tasks?.length) return { status: 'FAILED', stage: 'parse', planPath, reason: 'Re-parse after grace revision found no tasks.' }
+      continue
     }
     const det = r.determined ?? []
     if (r.verdict === 'PASS' || det.length === 0) {

@@ -4,6 +4,33 @@ Rolling log of reviewer/panel evaluations and the harness changes they produced.
 
 ---
 
+## 2026-07-26 — Repeat-stop postmortem: one-strike REPEAT rule aborts a converging loop (`wf_ead81b27`, session `c8f40489`)
+
+Sixth terminal stop on the admin-financial-override spec since 07-25 afternoon. This one died at plan-review round 2 with `UNRESOLVED_PLAN` ("resolutions did not stick") while the loop was **converging: 16 blocking findings → 2** (1 new determined + 1 REPEAT). The one-strike repeat rule at `run-review-flow.js` turned that single REPEAT into a full abort with a "re-plan or split" diagnosis that didn't fit.
+
+### What actually happened (evidence-verified against the plan file)
+
+- Reviser-first resume (1 user decision + 15 carried findings) → Sonnet reviser reported all 16 applied → codex round-2 re-reviewer returned 1 determined (whitespace-only `reason` validator — real, small) + 1 REPEAT (T6/§F refresh channel).
+- **The REPEAT was textually correct, and the reviser caused it.** Carried finding: "make the table consume successful dialog completion through its reload path." The reviser — grounding in the live codebase — found `TableViewService.fullReload` and **substituted its own mechanism**, writing §F so the *provider* emits "after all changed-field POSTs succeed … before/as the dialog closes" while T6 gives the *dialog* ownership of the POSTs, and explicitly adding "no dialog-result subscription … is needed." The provider has no stated way to learn of POST success — self-contradictory as written. Codex's "required edit demonstrably ABSENT" call was accurate in the letter.
+- Same signature as `wf_2677abe5` (07-26 00:33): reviser applied the onboarding decision at line 203, missed the contradicting instance at line 18 → REPEAT → abort. **Both observed repeat-stops are reviser misses (substitution / missed instance) on converging loops, not overloaded tasks** — the failure mode the one-strike rule was designed around has not been the one firing.
+- Yesterday's three 4-round-backstop stops (`wf_bf177017`, `wf_2bd2110a`, `wf_f72ce22c`) were the test-machinery-bundled-in-tasks pattern; planner rule 4 + the smaller 7-task plan fixed that class — those findings are gone from today's rounds.
+- User perception "codex continues to be a pain" — adjudicated **against** on this evidence: both repeat calls were correct; the harness policy (one codex classification → instant abort, no second opinion now that all seats are codex) is what amplified them.
+
+### Changes applied (2026-07-26, `workflows/run-review-flow.js` + `commands/exec/plan-review.md`, uncommitted)
+
+1. **Repeat grace round** (`run-review-flow.js` plan-review loop): a first REPEAT no longer aborts — repeats go back to the reviser as verbatim-apply instructions ("PREVIOUSLY REQUIRED, STILL ABSENT — apply this RESOLUTION verbatim … delete any earlier edit that contradicts it"), with the same round's determined findings riding along so they aren't lost. Only a repeat that survives its own targeted grace round — or one reported at the 4-round backstop — aborts. `repeatGraceUsed` flag, one grace per run.
+2. **REPEAT classification guidance** (re-reviewer `appliedNote`): an edit that WAS made but is defective/incomplete/uses a different mechanism must be reported as a NEW determined finding with its own resolution, NOT a REPEAT — REPEAT is reserved for items where no edit was attempted at all. (Today's case would then have converged at round 3 with no grace round needed.)
+3. **Binding-resolution rule for the reviser** (both `planReviserPrompt` and plan-review.md Step 2 instruction 2): a finding's RESOLUTION mechanism is binding — no substituting an "equivalent" design, even one grounded in the live codebase; a genuinely wrong/impossible resolution gets left unapplied and reported in `issues`, never redesigned silently.
+
+### Open items / cautions (refreshed)
+
+- All three changes: zero runs behind them. Watch the next repeat for (a) whether the grace round converges it, (b) whether codex now files applied-but-defective as determined, (c) whether the reviser starts reporting resolution conflicts in `issues` instead of substituting.
+- The tuning-log statement "round-2+ single reviewers stay Opus" is stale — since e282ed2 round 2+ is codex (haiku wrapper) too. All review authority is now codex; a repeat-verification second opinion remains a fallback option if grace-round tuning proves insufficient.
+- The plan itself (`admin-financial-override-plan-2026-07-26.md`) still carries the T6/§F contradiction + the whitespace-validator finding + 2 nits — hand-fix and resume with `skipPlanReview`, or re-run plan review under the new rules.
+- Still pending from 07-23: run-flow.md byte-identical resume args; foreground-timeout rule in task prompts (`wf_ea848751` has long terminated — both are now safe to apply).
+
+---
+
 ## 2026-07-25 (late night) — Delivery-failure postmortem: all-green pipeline, feature never wired (admin-financial-override, session `90821e53`, runs `wf_2677abe5` → `wf_d6d0d013` → `wf_e23038b7`)
 
 The pipeline reported implement ✓, validation PASS, 20+ review findings fixed across 4 fix rounds — and the user opened `/en/financial-analysis/table-view/pa-obligated-in-construction-or-completed` in tp-admin and found **no Edit button**. The feature the plan is named after never rendered. Root defect: `TpTableComponent` subclass constructor drops the inherited `@Optional() @Inject(EDIT_PROVIDER_TOKEN)` param when calling `super()` — valid TS (param defaults to `null`), Angular doesn't inherit constructor DI decorators, so injection silently yields null. Invisible to tsc/ng build by construction. User fixed it manually via the orchestrator.

@@ -96,7 +96,7 @@ A coherence review of the plan at {plan-file-path} found contradictions with det
 
 ## Instructions
 1. Read the plan file at {plan-file-path}.{ If a spec file exists: Read the spec at {spec-file-path} for intent context.}
-2. Edit the plan IN PLACE to apply each resolution exactly as stated. Make the conflicting tasks consistent — and if the invariant is cross-task, lift it into the plan's `## Shared Contract` section (create the section if absent) and have each affected task reference it, rather than restating it.
+2. Edit the plan IN PLACE to apply each resolution exactly as stated. The resolution's mechanism is binding — do not substitute an alternative design you judge equivalent or simpler; if the codebase or plan makes a resolution genuinely wrong or impossible, leave that finding unapplied and report it under Issues. Make the conflicting tasks consistent — and if the invariant is cross-task, lift it into the plan's `## Shared Contract` section (create the section if absent) and have each affected task reference it, rather than restating it.
 3. **Preserve the plan's parseable structure exactly.** Keep every `### T{N}: {title}` heading and its `What`/`Files`/`Tests`/`Done when`/`Depends on` fields intact. Edit field *contents* and the `## Shared Contract`; do NOT renumber, merge, split, or reformat tasks — the orchestrator re-parses these headings after you finish, and a structural change breaks that.
 4. Do NOT expand scope, add features, or re-architect. Apply only the stated resolutions and the consistency edits they require.
 5. Do NOT touch any code. You edit the plan `.md` only. Do NOT create git commits.
