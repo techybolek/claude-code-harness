@@ -4,6 +4,41 @@ Rolling log of reviewer/panel evaluations and the harness changes they produced.
 
 ---
 
+## 2026-07-26 (later) — `wf_0405da73` COMPLETE end-to-end: first live exercise of the triage gate, UNFIXED-trace, and disputed-findings block (session `c8f40489`)
+
+Resume after the repeat-stop: user hand-applied the T6/§F + whitespace-validator plan fixes, relaunched with `skipPlanReview:true`. 60 min, 19 agents, 1.32M tokens. 7/7 tasks COMPLETED (waves T1∥T5 → T2 → T3 → T4∥T6∥T7), validation PASS (real DB, full backend suite), code review **PASS (panel; round-3 findings all triaged out, after 2 fix rounds)**. First fully-green run on this feature — and the first run behind the 07-25 code-review changes.
+
+### Triage gate: earned its seat on first firing
+
+- **r1: 12 raw panel findings → 5 confirmed, 7 rejected** (3 UNREALISTIC, 4 DUPLICATE). The kills were *grounded*, not vibes: the no-UPDLOCK/stale-oldValue findings (2 seats) rejected by citing the plan's explicit last-writer-wins acceptance (plan line 264); the T-13 `rowId:1` authz findings rejected by tracing middleware order (`security.authorize` short-circuits 401 before body read); coverage-by-deletion rejected via the plan's own runtime-verification gating (line 268). These are precisely the concurrency/rigor findings that burned fix rounds 3–4 and the backstop on `wf_e23038b7`.
+- **r2: 3 → 2 confirmed** (rejected: `Infinity`/`1e309` numeric edge). **r3: 1 → 0 confirmed** (bundle-baseline artifact untracked — rejected: `SPEC/` is a pre-existing repo-wide `.git/info/exclude` entry) → PASS. Trajectory 12→5→3→2→1→0 in 2 fix rounds vs the pre-triage run's 16 → 5 fix rounds → UNRESOLVED with 3.
+- **Watch item:** the T-13/T-214 rejections judged *current reachability*, but the findings' value was counterfactual (a weak regression guard if authz were ever removed). Consistent with the plan's runtime-verification philosophy, but triage may systematically kill test-hardening findings; acceptable for now, keep an eye on it.
+
+### Plan-review pain converted into caught code defects
+
+Both contracts that wouldn't converge this morning did real work in code review: r2 flagged the dialog's partial-save reconciliation for contradicting §F's "failed/cancelled dialog must not emit fullReload" (the exact REPEAT contract), and r2 caught `Validators.required` accepting whitespace-only reasons — the very determined finding from plan-review round 2 — fixed with a `requiredTrimmedValidator`. The whitespace→`Number('  ')===0` amount bug (unresolved leftover from `wf_e23038b7`) was confirmed r1 and fixed. Fix r1 also deleted the out-of-scope migration file (3/3 panelists flagged it) and completed the T-15 bundle delta (+0.19 kB transfer, well under the ~2 KB gate).
+
+### Residuals for the user
+
+- Validation flagged a spec/live mismatch (not a regression): §E cleanup step 4 (`DELETE FROM financial_override_audit`) is impossible under live grants (SELECT+INSERT only, append-only by design); leftover dev/test audit rows from earlier sessions exist.
+- 1 open nit: `financial-override.service.ts:9` types `rowId` as `number` but HMGP's ProjectNumber is a string — worth a manual look, HMGP path may care at runtime.
+- Execute-phase discoveries: populated again (3–7 per task, all 7 tasks).
+
+### Follow-up change (2026-07-26 afternoon, `run-review-flow.js`, uncommitted): GAP_FILL rule in implementer prompts
+
+User-found defects on the delivered feature: the dialog's version picker rendered rows in storage order (no ORDER BY; plan/spec never stated an ordering) and the dialog fonts rendered ~10px (global `html{font-size:10px}` shrinks Material's rem tokens; sibling dialogs compensate via admin wrapper classes, the fresh wrapper didn't). Neither is catchable by the loop: no written contract violated (reviewers enforce only what's written — correctly, per the anti-invention tuning) and no visual oracle exists. Root cause: implementers treated **plan silence as "anything goes"** and shipped the path of least resistance.
+
+Change: a universal `GAP_FILL` block ("Plan silence is not a specification") added to `implementerPrompt` + `diagnosticPrompt` — where the plan is silent, supply the self-evident senior-dev choice and prefer the surrounding codebase's existing solution; note gap-fills in the summary; never override what the plan states. Implementation-time mirror of the reviser's binding-resolution rule; deliberately NOT added to any reviewer/triage prompt (review-side invention is the non-convergence engine). Kept universal per user constraint — no project/UI-specific rules in the harness. Rejected: a planner must-state-sort-order rule (the "specify every detail" treadmill, relocated). The picker itself was fixed by hand (ORDER BY versionColumn in `getSourceRows`, 13/13 mocha green, nodemon live-reloaded); fonts accepted as-is by the user. Zero runs behind GAP_FILL.
+
+### Open items (refreshed)
+
+- Repeat grace round + REPEAT-classification + binding-resolution reviser rule (this morning): still zero runs — this run skipped plan review entirely.
+- GAP_FILL implementer rule (above): zero runs; watch the next run's summaries for noted gap-fills, and whether reviewers stay quiet about them.
+- Triage counterfactual-test-value blind spot (above).
+- Still pending from 07-23: run-flow.md byte-identical resume args; foreground-timeout rule in task prompts.
+
+---
+
 ## 2026-07-26 — Repeat-stop postmortem: one-strike REPEAT rule aborts a converging loop (`wf_ead81b27`, session `c8f40489`)
 
 Sixth terminal stop on the admin-financial-override spec since 07-25 afternoon. This one died at plan-review round 2 with `UNRESOLVED_PLAN` ("resolutions did not stick") while the loop was **converging: 16 blocking findings → 2** (1 new determined + 1 REPEAT). The one-strike repeat rule at `run-review-flow.js` turned that single REPEAT into a full abort with a "re-plan or split" diagnosis that didn't fit.

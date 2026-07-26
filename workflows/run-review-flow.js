@@ -139,6 +139,14 @@ const RESULT_NOTE = 'Run long commands in the FOREGROUND with an explicit timeou
 // discoveries forward turns N re-derivations into 1 discovery + (N-1) free reads.
 const DISCOVERY_ASK = 'Also return discoveries: reusable facts you had to dig for that a LATER task touching the same code/data would otherwise re-derive from scratch — real DB table/column names, field-naming conventions, existing helper functions/patterns, schema quirks. One fact per line, no task-specific narration. Empty list if nothing reusable turned up.'
 
+// Gap-filling rule (2026-07-26, after the unsorted-picker/unreadable-font defects on
+// wf_0405da73): implementers treated plan silence as "anything goes" and shipped the
+// path of least resistance. This is the implementation-time mirror of the reviser's
+// binding-resolution rule: where the plan speaks, apply it verbatim; where it is
+// silent, use professional judgment — never lowest-effort defaults.
+const GAP_FILL = `## Plan silence is not a specification
+Where the plan doesn't state a detail, do not default to the path of least resistance — supply the choice a senior developer would consider self-evident, and prefer how the surrounding codebase already solves the same kind of problem over inventing your own. (Example of the class: a user-visible collection with no stated order gets an obviously sensible one, never storage order.) This is gap-filling, not scope expansion — note such choices in your summary. It never overrides anything the plan does state: where the plan speaks, the plan wins.`
+
 const TEST_GATE = `## Test gate (scope it to THIS task — do NOT blindly run the whole suite)
 - Run the task's own \`Tests:\` field verbatim. That field is the gate. If it names a scoped command, run exactly that.
 - Otherwise pick the cheapest gate that actually covers your change:
@@ -288,6 +296,8 @@ ${discoveryNote(discoveries)}
 - Read CLAUDE.md to discover the test runner and project conventions.
 - Implement the task: write code, write tests.${parallelNote}${baselineNote}${rerunNote}
 
+${GAP_FILL}
+
 ${TEST_GATE}
 
 ${RESULT_NOTE} ${DISCOVERY_ASK}`
@@ -306,6 +316,8 @@ ${discoveryNote(discoveries)}
 2. Examine the current codebase — check files that were supposed to be created/modified.
 3. Identify what went wrong and FIX it.
 4. Run the task's scoped \`Tests:\` gate (impacted tests only, not the full suite) until it passes — under a hard time wall. Backend mocha must use \`--exit --timeout 0\` wrapped in \`timeout 120\`. A "test timeout / hang" that clears the wall is almost always the \`--exit\` bug or a downed DB/VPN, NOT a code defect — verify that hypothesis FIRST (retry once with \`--exit\`, check the DB socket) before treating it as a real failure. If it is env, report status FAILURE with issues explaining the blocker; do not re-run a hanging command repeatedly.
+
+${GAP_FILL}
 
 ${RESULT_NOTE} ${DISCOVERY_ASK}`
 }
