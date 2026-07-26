@@ -167,6 +167,14 @@ const TEST_GATE = `## Test gate (scope it to THIS task — do NOT blindly run th
 // authority on rigor: every user decision was captured there; the run is autonomous.
 const REALISM_RULE = `Realism floor: a blocking finding's failure scenario must be reachable by a realistic actor through the app's actual entry points — the UI as built or the documented API contract. Scenarios requiring inputs the UI cannot produce, concurrency the deployment does not actually exhibit, or data magnitudes outside the domain's real ranges are nits. Rigor machinery (locks, concurrency proofs, fault injection, extra precision handling) is warranted only where the spec/plan explicitly asks for it — an unrequested rigor upgrade is a nit, never blocking.`
 
+// Coordination-channel severity floor (2026-07-26, wf_e87d6402): plan review's unique
+// value is defects the parallel fresh-context implementers cannot self-correct — the
+// plan is their only coordination channel. A defect confined to one task that its own
+// implementer will directly collide with (broken SQL, an impossible gate, a factual
+// claim the first compile/test disproves) self-heals via GAP_FILL; pricing it at a
+// full gated round is the non-convergence engine (16→1→1 singleton rounds observed).
+const PLAN_SEVERITY_RULE = `Severity floor — the plan is a coordination channel, not the implementation. Tasks are implemented in parallel by agents that share nothing but this plan, so report as blocking (DETERMINED/NEEDS_DECISION) only defects the implementers cannot self-correct: (a) cross-task incoherence — a contract one task produces and another consumes or asserts that does not line up (shapes, semantics, ownership, ordering), or (b) a defect that would ship silently — no test, gate, or validation step in the plan would surface it. A defect confined to ONE task that its implementer will directly collide with while doing the work (SQL that cannot run, a gate that cannot pass, a factual claim about the codebase disproved by the first compile or test run) is an advisory nit, never blocking — implementers are instructed to resolve exactly this class in place. Report such items as nits prefixed "ADVISORY(T{N}):" naming the affected task. Upgrades that merely make a test, gate, or audit more rigorous, exhaustive, or precise are also nits.`
+
 // Round-1 panel: independent reviewers with distinct focus lenses. All existing
 // seams are present from the start — a diverse panel catches in one round what a
 // single reviewer peels off one per round.
@@ -212,8 +220,8 @@ function codexPlanReviewerPrompt(lens, round = 1, applied = [], knownNits = []) 
     ? `\n## Nits already reported in earlier rounds — append this block verbatim to codex's prompt\nThese are known and non-blocking (the reviser applies the trivial ones). Do NOT re-report one, and do NOT escalate one to blocking unless you can state a concrete failure scenario the earlier round lacked — a known nit resurfacing as blocking costs a full extra review round.\n${knownNits.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
     : ''
   const role = lens
-    ? `Add this lens line: "You are one of ${REVIEW_LENSES.length} parallel independent reviewers, each with a different focus. Run ALL of the checks, but dig deepest on YOUR lens — ${lens.key}: ${lens.focus} Report anything blocking you find regardless of lens." Also append this realism floor verbatim: "${REALISM_RULE}"`
-    : `Tell codex it is the single round-${round} re-reviewer verifying a just-revised plan: run ALL of the checks unscoped in one coherent pass, and report EVERY finding it can see this round — each one held back costs a full extra review round. Also append this severity floor verbatim: "Severity floor for this re-review round: report as blocking (DETERMINED/NEEDS_DECISION) only incoherence that would make implementation fail or produce conflicting artifacts — an implementer following the plan as written would produce broken or contradictory work. Upgrades that merely make a test, gate, or audit more rigorous, exhaustive, or precise are nits." Also append this realism floor verbatim: "${REALISM_RULE}"`
+    ? `Add this lens line: "You are one of ${REVIEW_LENSES.length} parallel independent reviewers, each with a different focus. Run ALL of the checks, but dig deepest on YOUR lens — ${lens.key}: ${lens.focus} Report anything blocking you find regardless of lens." Also append this severity floor verbatim: "${PLAN_SEVERITY_RULE}" Also append this realism floor verbatim: "${REALISM_RULE}"`
+    : `Tell codex it is the single round-${round} re-reviewer verifying a just-revised plan: run ALL of the checks unscoped in one coherent pass, and report EVERY finding it can see this round — each one held back costs a full extra review round. Also append this severity floor verbatim: "${PLAN_SEVERITY_RULE}" Also append this realism floor verbatim: "${REALISM_RULE}"`
   return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex plan panelists' : 'the cross-model Codex plan re-reviewer'}. You do NOT review the plan yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
 1. Read ~/.claude/commands/exec/plan-review.md in full.
@@ -243,6 +251,8 @@ Findings may come from independent parallel reviewers and can overlap — where 
 
 Each finding's RESOLUTION is binding: apply its stated mechanism as written — do NOT substitute a design you judge equivalent or simpler, even one grounded in the live codebase (a substituted mechanism reads as "fix absent" to the next reviewer and can abort the run). If the codebase or the plan makes a resolution genuinely wrong or impossible, apply nothing for that finding and report the conflict in issues instead.
 
+Never write a NEW factual claim about the codebase into the plan (what a file or function does, an env var, a table/column, an existing pattern) without verifying it in the exact file you cite — read that file first and quote the verified line in your summary. If you cannot verify a claim a resolution seems to need, leave the claim out and note it in issues. (A plausible-but-wrong claim survives until a later review round disproves it, at a full round's cost — observed: a signing expression read in one file was attributed to a different file whose code hardcodes the value.)
+
 Remember: edit the plan .md IN PLACE, preserve the parseable \`### T{N}: {title}\` structure and field names exactly, do not expand scope, do not touch code, no git commits.
 
 Return structured output: status (SUCCESS|FAILURE), summary (what changed per finding), filesChanged, issues ("None" if none).`
@@ -262,6 +272,13 @@ Extract every task section with a heading like \`### T{N}: {title}\`. For each t
 
 Also return validationCommands: the plan's final validation commands (from a Validation/Verification section), as a list of shell commands (empty list if none).`,
     { label: `parse tasks (round ${round})`, model: 'haiku', effort: 'low', phase: 'Parse', schema: PARSED })
+}
+
+function advisoryNote(taskId) {
+  const mine = planAdvisories.filter(a => a.includes(`ADVISORY(${taskId})`))
+  return mine.length
+    ? `\n## Known plan inaccuracies affecting this task (plan-review advisories — the code is the authority)\nVerify each against the actual code and resolve it in place per the gap-fill rule below; say what you did in your summary.\n${mine.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n`
+    : ''
 }
 
 function discoveryNote(discoveries) {
@@ -290,7 +307,7 @@ function implementerPrompt(t, isFirst, hasParallelSiblings, discoveries) {
 **Files:** ${t.files.join(', ') || '(see plan)'}
 **Tests:** ${t.tests || '(none specified — pick the cheapest covering gate per the rules below)'}
 **Done when:** ${t.doneWhen}
-${discoveryNote(discoveries)}
+${advisoryNote(t.id)}${discoveryNote(discoveries)}
 ## Context
 - Read the full plan file for overall context.
 - Read CLAUDE.md to discover the test runner and project conventions.
@@ -310,7 +327,7 @@ function diagnosticPrompt(t, previous, discoveries) {
 ## Failed task: ${t.id}: ${t.title}
 ## Previous attempt result:
 ${JSON.stringify(previous, null, 2)}
-${discoveryNote(discoveries)}
+${advisoryNote(t.id)}${discoveryNote(discoveries)}
 ## Instructions
 1. Read the plan for context.
 2. Examine the current codebase — check files that were supposed to be created/modified.
@@ -483,6 +500,11 @@ let planReview = skipPlanReview
   ? 'SKIPPED (skipPlanReview — findings applied manually after an UNRESOLVED_PLAN stop)'
   : `SKIPPED (hand-written plan with ${parsed.tasks.length} tasks)`
 let planNits = []
+// ADVISORY(T{N})-prefixed nits from any plan-review round: single-task defects the
+// implementer will collide with and can resolve in place (see PLAN_SEVERITY_RULE).
+// They ride into that task's implementer prompt for free instead of costing a gated
+// revise round. Populated after the loop from every round's nits.
+let planAdvisories = []
 if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
   const MAX_REVIEW_ROUNDS = 4
   const applied = []
@@ -496,6 +518,11 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
   // spends most of its tokens restating the chosen resolutions once per panelist. The
   // single full reviewer at round 2 then verifies the revised plan in one coherent pass.
   if (decisions.length) {
+    // Restore the paused loop's context: without these, a mid-loop NEEDS_DECISION
+    // pause resumes with empty applied[]/knownNits and the re-reviewer re-litigates
+    // already-applied resolutions. Passed back verbatim from the NEEDS_DECISION result.
+    if (Array.isArray(_args.appliedResolutions)) applied.push(..._args.appliedResolutions)
+    if (Array.isArray(_args.knownNits)) knownNits.push(..._args.knownNits)
     const seeded = [
       ...decisions.map(d => `USER DECISION — conflict: ${d.conflict} RESOLUTION to apply: ${d.resolution} Apply this resolution everywhere the plan touches the conflict (task What/Tests/Done-when fields, Shared Contract rows, acceptance criteria). If the plan already reflects it, make no edit for this item.`),
       ...carriedFindings,
@@ -549,7 +576,11 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
       // resume with `decisions` in args and re-review in one coherent pass.
       // Return the DETERMINED findings too — the entry point passes them back as
       // args.carriedFindings on resume so this round's work is not thrown away.
-      return { status: 'NEEDS_DECISION', planPath, planReview: 'NEEDS_DECISION', needsDecision: r.needsDecision, determined: r.determined ?? [], nits: planNits }
+      // appliedResolutions + knownNits: the loop's context, returned so a resume can
+      // restore it (2026-07-26, wf_e87d6402: a round-3 pause wiped 17 applied
+      // resolutions from the re-reviewer's context — it can then re-litigate finished
+      // work as new findings and re-escalate known nits).
+      return { status: 'NEEDS_DECISION', planPath, planReview: 'NEEDS_DECISION', needsDecision: r.needsDecision, determined: r.determined ?? [], appliedResolutions: applied, knownNits, nits: planNits }
     }
     if (r.repeats?.length) {
       // Grace round (2026-07-26): a first repeat goes back to the reviser as a
@@ -593,6 +624,8 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
     parsed = await parseTasks(revised + 1) // reviser edited the plan — re-parse before executing
     if (!parsed?.tasks?.length) return { status: 'FAILED', stage: 'parse', planPath, reason: 'Re-parse after revision found no tasks.' }
   }
+  planAdvisories = knownNits.filter(n => /ADVISORY\(T[^)]+\)/i.test(n))
+  if (planAdvisories.length) log(`${planAdvisories.length} advisory finding(s) will ride into their tasks' implementer prompts`)
 } else {
   log(`Plan review: ${planReview}`)
 }
@@ -750,4 +783,5 @@ return {
   triageRejected,
   nits: reviewNits,
   planNits,
+  planAdvisories,
 }

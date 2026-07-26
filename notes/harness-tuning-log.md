@@ -4,6 +4,39 @@ Rolling log of reviewer/panel evaluations and the harness changes they produced.
 
 ---
 
+## 2026-07-26 (evening) — `wf_e87d6402` plan-review cycle re-diagnosed mid-run: coordination-channel severity floor + advisory channel + resume context fix (session `d22b69ea`, orchestrating session `d1575832`)
+
+8th run on the admin-financial-override spec (fresh practice relaunch, spec input, new Opus plan). User report: "same vicious time and token wasting review cycle." Evaluated live at ~30 min in: r1 panel 16 findings → 9-min sonnet revise → r2: 1 new determined → revise → r3: 1 new determined + 1 NEEDS_DECISION → full stop → orchestrator auto-resolved (protocol-clean, spec-grounded) → resume reviser-first → post-resume re-review PASSed → Execute (progressing normally at eval end; plan review total ~35 min, zero nitpicks).
+
+### Adjudication of "fixer is stupid vs reviewer is a nitpicker": neither, on transcript evidence
+
+- **r2's JWT finding was fixer-introduced**: `TP_JWT_SECRET || 'secretkey'` appears nowhere in the planner output; the r1 reviser read `adfsTest.js` (which really uses that expression) and attributed it to `security.js` (whose `verifyToken` hardcodes the literal). Real defect, born in a fix, caught one round later. First confirmed fix→new-defect in PLAN review (known signature in code review).
+- **r3's HMGP finding was an original planner defect missed twice**: unconditional `SELECT rowKeyCol, versionCol` sits verbatim in the planner output next to `versionColumn: null`; 3 r1 seats + the r2 reviewer missed it. Sampling, not nitpicking.
+- **r3's NEEDS_DECISION (partial-success refresh) is the 3rd paid appearance of the same contract** (wf_ead81b27 REPEAT abort, wf_0405da73 code-review r2, now) — a genuine spec gap re-derived on every re-plan because no document records the resolution.
+- Structural read: reviews sample, they don't exhaust — and the loop priced every late catch at a full gated round (~7–10 min). The user's key question reframed the floor: most singleton findings are ones the implementer would collide with and self-correct (JWT: tests pass anyway; HMGP: first run breaks, GAP_FILL licenses the fix). What implementers CANNOT self-correct is cross-task divergence — parallel fresh contexts share nothing but the plan.
+
+### NEW defect: mid-loop NEEDS_DECISION wipes loop context on resume
+
+First-ever r≥2 NEEDS_DECISION pause exposed it: the resume path (`decisions.length` branch) rebuilt `applied` from only decisions+carriedFindings — the 17 previously-applied resolutions and all knownNits vanished from the re-reviewer's context (re-litigation + nit-escalation risk; this run's post-resume round happened to PASS anyway).
+
+### Changes applied (2026-07-26 evening, user-approved after discussion, uncommitted)
+
+1. **`PLAN_SEVERITY_RULE` (coordination-channel floor) on ALL plan-review rounds** (`run-review-flow.js` r1 lenses + r≥2; mirrored as "Coordination floor" in plan-review.md Classify): blocking = cross-task incoherence OR ships-silently; a single-task defect its implementer will directly collide with (broken SQL, impossible gate, factual claim the first compile/test disproves) is a nit prefixed `ADVISORY(T{N}):`. Replaces the r≥2-only "implementer produces broken work" floor (too broad — locally-broken work self-heals). Chosen over the 07-25 gate-cutting restructure proposal: reduces rounds by reclassifying, not by not looking.
+2. **Advisory channel**: `ADVISORY(T{N})`-prefixed nits from any round ride into that task's implementer/diagnostic prompt ("Known plan inaccuracies… the code is the authority"), surfaced as `planAdvisories` in the result. Prompt renders empty when none → Execute cache preserved on old-run resumes without advisories.
+3. **Reviser claim rule** (planReviserPrompt + plan-review.md Step 2.2): no NEW factual claim about the codebase without verifying the exact cited file — quote the verified line in the summary; unverifiable → issues. Kills the JWT class at the source.
+4. **NEEDS_DECISION resume context fix**: the stop now returns `appliedResolutions` + `knownNits`; the resume branch re-seeds both from args; run-flow.md tells the orchestrator to pass them back verbatim.
+5. **Spec-side (TPV2, biggest lever for the practice loop)**: "🔒 Settled decisions" block appended to `admin-financial-override-tech-2026-07-24.md` — sequential POSTs + rebaseline-on-partial-failure + committed-change-result reload contract, trimmed-reason ≤1000, strict amount parsing, HMGP null-version handling. Planners/reviewers must not re-raise these.
+
+Syntax-checked (async-wrapped `node --check`). Cache: r1 panel + r≥2 reviewer + reviser prompts changed → resuming any pre-edit run re-runs plan review live from r1 (planner/parse still cached); Execute prompts byte-identical when no advisories exist.
+
+### Open items (refreshed)
+
+- All five changes: zero runs behind them. Watch the next run for (a) whether ADVISORY-prefixed nits actually appear and ride into the right task prompts, (b) whether blocking counts drop without real cross-task defects leaking to Execute, (c) whether the reviser's summaries start quoting verified lines, (d) whether a fresh plan from the updated spec still raises the partial-success conflict (it must not).
+- Deferred with rationale: extra grounding lens in r1 and diff-scoped r≥2 reviews — most of what they'd catch is advisory under the new floor; revisit if rounds don't shrink.
+- Triage counterfactual-test-value blind spot; GAP_FILL watch; 07-23 leftovers (byte-identical resume args note is now partly addressed by run-flow.md's verbatim-args wording; foreground-timeout rule in task prompts still pending).
+
+---
+
 ## 2026-07-26 (later) — `wf_0405da73` COMPLETE end-to-end: first live exercise of the triage gate, UNFIXED-trace, and disputed-findings block (session `c8f40489`)
 
 Resume after the repeat-stop: user hand-applied the T6/§F + whitespace-validator plan fixes, relaunched with `skipPlanReview:true`. 60 min, 19 agents, 1.32M tokens. 7/7 tasks COMPLETED (waves T1∥T5 → T2 → T3 → T4∥T6∥T7), validation PASS (real DB, full backend suite), code review **PASS (panel; round-3 findings all triaged out, after 2 fix rounds)**. First fully-green run on this feature — and the first run behind the 07-25 code-review changes.
