@@ -40,7 +40,7 @@ Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
 <EXECUTABLE shell commands ONLY — every line here is run verbatim by the validation agent, and a gate that is not a runnable command does not exist. Prose, preconditions, and aspirational gates go under Notes. Commands run the full test suite and confirm no regressions; discover the test runner from CLAUDE.md. All tests must pass.>
 
 ## Runtime Verification
-<only if the chore touches anything user-visible: steps the validation agent executes LIVE with the playwright-cli skill (route, element/behavior that must render, action, expected observable result). Equal in force to Validation Commands. Do NOT plan new Playwright .spec.ts files unless this repo's CI actually runs them. Omit for pure refactors/config work.>
+<only if the chore touches anything user-visible: steps the validation agent executes LIVE with the playwright-cli skill (route, element/behavior that must render, action, expected observable result). Equal in force to Validation Commands. Keep the set MINIMAL — each step is an LLM-driven browser session re-paid on every validation pass: one happy-path step per touched user-visible surface, plus at most the wiring proofs the compiler cannot see; branch coverage belongs in Validation Commands tests wherever a test layer can express it. Do NOT plan new Playwright .spec.ts files unless this repo's CI actually runs them. Omit for pure refactors/config work.>
 
 ## Notes
 <additional context, new dependencies, etc.>

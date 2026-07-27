@@ -453,6 +453,8 @@ Every finding above already passed a triage gate that verified it against the cu
 
 What you verify is the finding's FAILURE SCENARIO, not your edit. Logic findings: typecheck/build the touched files and run the single covering test (write one if the finding was a missing/weak test). Rendering/wiring/reachability findings (element not rendered, provider not injected, route never reaches the code): typecheck/build is NOT sufficient — trace the actual chain (route config → the component the route REALLY renders → its template/inheritance chain), cite file:line for every hop, and confirm your fix lies ON that chain. If the finding names a component, verify it is the one the route renders BEFORE fixing it; if it is not, fix the one that is and say so in summary. If a fix genuinely cannot be verified without running the app, state exactly what runtime evidence is missing in issues — never claim it fixed on a compile alone.
 
+Test scope: the single covering test or spec file per finding is the ceiling — re-run only that after a failed attempt, and never the feature-wide or full suite (the re-review and validation layers re-prove the whole surface after this round; a fixer-run broad suite is pure repeat cost).
+
 Return structured output: status (SUCCESS|FAILURE), summary (what was fixed per finding, including the reachability trace for wiring fixes), filesChanged, testOutput (the specific verification you ran), issues ("None" if none).`
 }
 

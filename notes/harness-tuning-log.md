@@ -4,6 +4,53 @@ Rolling log of reviewer/panel evaluations and the harness changes they produced.
 
 ---
 
+## 2026-07-26 (late night) — First run behind the full restructure: COMPLETE green, but 39% of wall-clock was a harness notification stall (`wf_1c75e5a5` → `wf_9d09eb2e` → `wf_c67d6c9a`, session `13a95cf0`, Opus 4.8 orchestrator)
+
+10th run on admin-financial-override; first behind panel-every-round + 2-round cap + opus reviser + parse-plan.cjs + GAP_FILL, all at once. Spec → COMPLETE: 7/7 tasks, validation PASS, code review PASS, zero unresolved. Wall 16:56→21:13 (4h17m); actual compute ~2h05m. User complaint ("forever review, forever validation, mindless, repeated, stupid questions") evaluated live at completion.
+
+### Wall-clock breakdown (CDT)
+
+- 16:56–17:09 planner+parse+r1 panel → killed by corporate SSL outage (external; 2nd codex-outage fire, again handled honestly).
+- 17:16–17:19 resume: r1 panel re-ran live (3m), workflow returned NEEDS_DECISION at **17:19:00** (proven: `wzv1g5zml.output` mtime).
+- **17:19–19:00 — NOTHING RAN. 1h41m stall**: the finished result sat undelivered; task-notification reached the orchestrator at 19:00:31. No host suspend (kernel clock calibrated via the 17:14 getaddrinfo error), no agent activity, output file complete. CLI 2.1.220 failed to re-invoke on task completion for ~101 min. **Biggest single cost of the run — 39% of wall — and it's harness, not review.** Separate red flag same day: OOM-killer killed a 12.3GB CLI process at 15:25 (earlier session).
+- 19:00–19:23 ASK #1 (TOP-500 audit cap) + user answer + args rebuild.
+- 19:23–20:01 reviser+r2 panel (10m) → Execute 7/7 in waves (22m) → validation FAILED on a **real cross-task regression**: T5 added a required `editProvider` param to `TpTableBaseComponent`, `TableViewAdminComponent` (in no task's file list) still passed the old super() arity → TS2554. The DI-inheritance trap's sibling, caught by validation as designed.
+- 20:01–20:02 orchestrator one-liner fix (sanctioned path followed correctly).
+- 20:02–20:19 `review-flow-only` #1: full validation incl. live playwright → FAILURE, caught the native-`<select [value]>` version-dropdown data-integrity bug (real; admin could overwrite the wrong version).
+- 20:19–20:28 orchestrator mat-select fix → fresh relaunch (single-agent workflow can't delta-resume).
+- 20:28–21:06 `review-flow-only` #2: full validation again (13m) + panel + triage + 2 fix rounds → PASS. Fix rounds caught 2 more real bugs (duplicate-audit on version-switch, cancel-during-save race). Triage rejected 8 (dupes/unrealistic).
+- 21:06–21:13 ASK #2 (audit DELETE grant) → DB inspection → DBA script → COMPLETE.
+
+### Open-item evidence (lots of firsts)
+
+- **Apply-and-proceed FIRED on its first run**: 4 residual findings applied at the 2-round cap (`planFinalUnverified`), run proceeded. Downstream caught everything real; no evidence a residual shipped broken. Watch item (a) partially answered — it fired, but the run stayed green; no reason yet to bump MAX to 3.
+- **Opus reviser + 2-round cap**: plan review converged r1 panel → 1 NEEDS_DECISION + 8 determined → reviser + r2 → proceed. No REPEATs, no substitution defects.
+- **parse-plan.cjs ferry**: clean, ~37s parse agent (was ~1–3 min).
+- **Panel/triage/fixer economics**: re-verify runs are dominated by live playwright+DB round-trips (13–17m per validation pass), not review seats. User's "forever validation" = 3 full validation passes (1 in-pipeline + 2 post-manual-fix), each mandated by the post-manual-fix full-re-verify protocol — and each caught a real bug, so "mindless" is adjudicated AGAINST on output, but the full-rerun-per-manual-fix structure is the real repetition cost.
+
+### The two AskUserQuestions, adjudicated
+
+1. **TOP-500 vs "every override" (19:01, cost 23m)** — protocol-legal: run-flow.md's product-tradeoff exception, and it's literally the "which behavior end users see" case. But it's the 4th paid appearance of this audit-cap contract across runs, and the user experiences these as "stupid questions I shouldn't be dealing with." Lever options: record the now-made decision (keep TOP 500, relabel) in the spec's 🔒 Settled block (legitimate — it's a user decision, not a hand-fix); or tighten run-flow.md to always self-resolve + report in Decisions made (matches the user's autonomy philosophy; removes the exception entirely).
+2. **Audit DELETE grant (21:07)** — asked BEFORE checking capability; `TPExpandedAccess` can't GRANT or DELETE, so the chosen option was unexecutable and the outcome (write a DBA script) was the same regardless of answer. Confirm-first on a shared-DB permission change is right in principle, but the ordering was wrong: verify capability → then present script + one confirm, no menu.
+
+### Proposals (pending user decision)
+
+- **Report/watch the notification stall** (CLI 2.1.220): if it recurs, add a run-flow.md fallback — after launching a Workflow, poll the task output file mtime if no notification within the expected phase duration. Also watch memory: the 12.3GB OOM kill suggests long orchestrator sessions can balloon.
+- **Kill ASK #1's class**: settle the TOP-500 decision in the spec block, and/or drop the product-tradeoff exception from run-flow.md's NEEDS_DECISION branch (always self-resolve + report).
+- **ASK-ordering rule**: capability check before any user question whose options depend on it.
+
+### Follow-up changes (2026-07-27, user-approved, uncommitted) — repetition/cost levers from the wall-clock analysis
+
+Deeper profiling on the user's two follow-up questions. (1) Why validation passes take 13–17 min: not the browser — the agent loop; ~50 playwright-cli invocations/pass at a model round-trip each (~5 min), 14–22 DB queries (~3–4 min), 3 ng builds incl. the T-15 base-revision rebuild (~2 min). The plan's Runtime Verification had 7 steps (only one happy-path; T-19 is full fault-injection with request interception) because TPV2 has no frontend unit layer — dialog behavior verification has nowhere else to live. (2) The user's anti-rerun rule (TEST_GATE) held where it applies: 13 mocha executions = 5× T4 authoring the suite (its own gate) + 1× per validation pass (pass-2's provably redundant — zero backend changes) + 5× fixers (TEST_GATE never bound fixers). Mocha is seconds-cheap; the expensive repetition is the browser flow + T-15 double-build re-paid per re-verify pass.
+
+1. **Delta-scoped re-verify** (`review-flow-only.js`): new optional `changedFiles` arg — when the orchestrator enumerates the complete delta since the last full pass, the validation prompt gains a Delta-scope section: skip commands no changed file can affect (justify per-item), Runtime Verification mandatory for flows touching the delta + the manual fix's failure scenario, skippable with justification otherwise; expensive owned procedures (T-15 byte-compare) may reuse the prior pass's recorded result. Scope by affected BEHAVIOR, never by edit (the 07-25 wrong-component lesson). Success gate reads "every in-scope step". run-flow.md's post-manual-fix path (b) now documents `changedFiles` + the omit-when-incomplete rule.
+2. **Fixer test-scope ceiling** (both scripts' fixerPrompt, lockstep): single covering test/spec per finding, re-run only after a failed attempt, never the feature-wide or full suite — re-review/validation re-prove the surface.
+3. **Runtime Verification minimality bound** (all three plan templates): one happy-path step per user-visible flow/surface + compiler-invisible wiring/isolation proofs; a branch/fault-injection step must name the acceptance criterion no automated test in this repo can cover (bug.md anchors on the symptom's path + the regression test owning branch coverage; user asked for the bound on bug/chore too after feature.md shipped first). Deliberately NOT bounded to happy-path-only: T-19/T-20-class steps found real bugs (duplicate-audit, cancel race) this run.
+
+Both scripts syntax-checked (async-wrapped `node --check`). Cache: fixerPrompt changed in run-review-flow.js → pre-edit run resumes bust fix-rounds-onward in code review (validation/panel/triage prompts unchanged there); review-flow-only.js prompts changed but it's launch-fresh by design. Zero runs behind all three — watch: (a) does the orchestrator enumerate `changedFiles` honestly or over-scope skips; (b) does a delta-scoped pass ever miss a real cross-boundary regression (e.g. frontend edit breaking a backend contract test — the skip rule's "can affect" judgment is the risk surface); (c) does the next feature plan's Runtime Verification section shrink.
+
+---
+
 ## 2026-07-26 (night, latest) — Plan review restructured: panel EVERY round + 2-round cap + apply-and-proceed (`run-review-flow.js`, uncommitted; user-approved)
 
 `wf_309ff903` (fresh run behind the opus-reviser change, entry below) proved the reviser was never the bottleneck: the opus reviser applied clean fixes with **zero REPEATs, zero substitution-contradictions, zero re-raised NEEDS_DECISIONs, count 10→2→1→1** — and the loop STILL didn't converge to PASS. Diagnosis: **reviewer-driven, not reviser-driven.** A single re-reviewer surfaces ~1 new genuine cross-task defect per round (r2 audit-body mismatch, r3 field_name logical-vs-physical, r4 GET/audit TOP-500 cap — all distinct, real), so a dense contract web (6 shared contracts §A–§F × 7 tasks) dribbles out over many rounds no matter how good the fixer is. Plus the orchestrator's NEEDS_DECISION resume reset the round counter → the run sailed past the old 4-round backstop (the recurring "relaunch resets convergence state" meta-loop). Opus-reviser timings confirmed real work (pin held: all 4 revisers on `claude-opus-4-8`, 37s for a single trivial finding up to 6m40s for the 12-finding batch — not rubber-stamping).

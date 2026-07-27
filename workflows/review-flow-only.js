@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review-flow-only',
   description: 'Standalone Validate + Code-review extraction of run-review-flow — re-verify an existing implementation (e.g. after a manual fix) with the same codex panel and fixer loop',
-  whenToUse: 'The sanctioned post-manual-fix path from exec:run-flow (never exec:review-loop/review-panel). Args: { planPath, validationCommands?: string[], skipValidation?: boolean }.',
+  whenToUse: 'The sanctioned post-manual-fix path from exec:run-flow (never exec:review-loop/review-panel). Args: { planPath, validationCommands?: string[], skipValidation?: boolean, changedFiles?: string[] (the complete delta since the last full validation pass — delta-scopes validation; omit for a full pass) }.',
   phases: [
     { title: 'Validate', detail: 'full-suite cross-task validation + runtime verification' },
     { title: 'Code review', detail: 'all-codex lens panel → triage gate (stale/unrealistic findings rejected) → fix loop while confirmed count shrinks; plateau after 2 fixes or 4 fix rounds stops (review-panel.md policy)' },
@@ -17,6 +17,11 @@ const _args = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 const planPath = _args.planPath
 const validationCommands = Array.isArray(_args.validationCommands) ? _args.validationCommands : []
 const skipValidation = _args.skipValidation === true
+// Delta scope: the complete set of files changed since the last FULL green-except-
+// the-fixed-finding validation pass (the orchestrator knows this; git can't — the
+// whole feature sits uncommitted in the tree). Present → validation skips suites
+// and runtime steps the delta provably cannot affect. Absent → full pass.
+const changedFiles = Array.isArray(_args.changedFiles) ? _args.changedFiles : []
 if (!planPath) {
   return { status: 'FAILED', stage: 'input', reason: 'Invalid args: need planPath (plus optional validationCommands, skipValidation).' }
 }
@@ -63,6 +68,21 @@ Then read the output file and transcribe codex's findings VERBATIM into the stru
 
 If the codex CLI is missing, exits non-zero, produces no output file, or hits the timeout: return verdict UNAVAILABLE with all lists empty. Never invent a review, never retry more than once.`
 
+function deltaNote() {
+  if (!changedFiles.length) return ''
+  return `
+## Delta scope — a previous FULL validation pass of this plan already ran
+That pass was green except for the finding(s) a manual fix then addressed. The complete delta since it (per the orchestrator — git cannot derive this, the whole feature is uncommitted):
+${changedFiles.map(f => `- ${f}`).join('\n')}
+
+Scope this pass to the delta — by AFFECTED BEHAVIOR, never by edit:
+- A validation command may be SKIPPED only when no changed file can affect its result (e.g. skip the backend suite when every changed file is frontend-only). Name each skipped command and the reason in testOutput. When in doubt, run it.
+- Runtime Verification steps are MANDATORY when their flow renders, calls, or depends on any changed file's component/route — above all every step exercising the manual fix's failure scenario. A step the delta provably cannot affect may be skipped with a one-line justification in testOutput.
+- An expensive owned procedure (e.g. a before/after bundle byte-comparison requiring a base-revision rebuild) may reuse the previous pass's recorded result when no changed file can affect that artifact — say so in testOutput.
+Delta-scope skips justified this way are NOT unexecuted-criterion failures; "every Runtime Verification step" in the success gate means every step in delta scope.
+`
+}
+
 function validationPrompt(cmds0) {
   const cmds = cmds0.length
     ? `Validation commands from the plan:\n${cmds0.map(c => `- ${c}`).join('\n')}`
@@ -71,13 +91,13 @@ function validationPrompt(cmds0) {
 
 ${cmds}
 
-This is the ONE full-suite run after baseline. Wrap backend mocha in \`timeout 180\` with \`--exit --timeout 0\`. Run every command in the FOREGROUND — never \`run_in_background\` (ending your turn while waiting on a background command kills the task without a report). Skip suites whose external prerequisite is confirmed down and note them; report pre-existing env failures separately from genuine regressions.
+${changedFiles.length ? 'This re-verify pass is DELTA-SCOPED — see the Delta scope section below.' : 'This is the ONE full-suite run after baseline.'} Wrap backend mocha in \`timeout 180\` with \`--exit --timeout 0\`. Run every command in the FOREGROUND — never \`run_in_background\` (ending your turn while waiting on a background command kills the task without a report). Skip suites whose external prerequisite is confirmed down and note them; report pre-existing env failures separately from genuine regressions.
 
 Gates beyond the commands:
 - **Skipped ≠ pass.** A test that covers a plan acceptance criterion but is SKIPPED or not run (missing fixture, env var, login state) is a FAILURE of that criterion, not a pass — name the criterion in issues. A green suite that never executed the acceptance test proves nothing.
 - **Runtime Verification.** If the plan has a Runtime Verification section, execute every step live with the playwright-cli skill against the running app: open the route, assert the element/behavior actually renders, perform the action, verify the observable outcome. Report each step's observed result in testOutput. A step you could not execute is a FAILURE with the blocker named. Static checks (build/tsc) never substitute for a runtime step — framework wiring (DI, routing, template rendering) fails invisibly to the compiler.
-
-Return structured output: status SUCCESS only if there are no genuine regressions AND no acceptance criterion is covered only by a skipped/unexecuted test AND every Runtime Verification step passed (env-blocked suites noted in issues do not fail the run), summary, testOutput, issues. Do NOT create git commits.`
+${deltaNote()}
+Return structured output: status SUCCESS only if there are no genuine regressions AND no acceptance criterion is covered only by a skipped/unexecuted test AND every in-scope Runtime Verification step passed (env-blocked suites noted in issues, and delta-scope skips justified in testOutput, do not fail the run), summary, testOutput, issues. Do NOT create git commits.`
 }
 
 // Lens keys must match the table in review-panel.md — definitions live there only.
@@ -137,6 +157,8 @@ ${blocking.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 Every finding above already passed a triage gate that verified it against the current code and a realism floor — Step 2's "dispute" option is NOT available here: fix every finding. Findings can still overlap — where two describe the same defect, fix it once. Do not address nits. No git commits.
 
 What you verify is the finding's FAILURE SCENARIO, not your edit. Logic findings: typecheck/build the touched files and run the single covering test (write one if the finding was a missing/weak test). Rendering/wiring/reachability findings (element not rendered, provider not injected, route never reaches the code): typecheck/build is NOT sufficient — trace the actual chain (route config → the component the route REALLY renders → its template/inheritance chain), cite file:line for every hop, and confirm your fix lies ON that chain. If the finding names a component, verify it is the one the route renders BEFORE fixing it; if it is not, fix the one that is and say so in summary. If a fix genuinely cannot be verified without running the app, state exactly what runtime evidence is missing in issues — never claim it fixed on a compile alone.
+
+Test scope: the single covering test or spec file per finding is the ceiling — re-run only that after a failed attempt, and never the feature-wide or full suite (the re-review and validation layers re-prove the whole surface after this round; a fixer-run broad suite is pure repeat cost).
 
 Return structured output: status (SUCCESS|FAILURE), summary (what was fixed per finding, including the reachability trace for wiring fixes), filesChanged, testOutput (the specific verification you ran), issues ("None" if none).`
 }
