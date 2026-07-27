@@ -5,7 +5,7 @@ export const meta = {
   phases: [
     { title: 'Plan', detail: 'auto-plan spec (spec input only)' },
     { title: 'Parse', detail: 'deterministic parse via parse-plan.cjs (haiku ferries the ~1KB skeleton; model extraction only as fallback)' },
-    { title: 'Plan review', detail: 'all-codex lens panel round 1, then loop-until-dry; max 4 rounds (plan-review.md policy)' },
+    { title: 'Plan review', detail: 'all-codex lens panel EVERY round; opus reviser; 2-round cap, final findings apply-and-proceed (no UNRESOLVED bail)' },
     { title: 'Execute', detail: 'dependency waves; parallel when Files are disjoint; 1 retry per task' },
     { title: 'Validate', detail: 'full-suite cross-task validation' },
     { title: 'Code review', detail: 'all-codex lens panel → triage gate (stale/unrealistic findings rejected) → fix loop while confirmed count shrinks; plateau after 2 fixes or 4 fix rounds stops (review-panel.md policy)' },
@@ -127,13 +127,17 @@ const withUnavailable = s => ({ ...s, properties: { ...s.properties, verdict: { 
 const CODEX_PLAN_OUT = withUnavailable(PLAN_REVIEW_OUT)
 const CODEX_CODE_OUT = withUnavailable(CODE_REVIEW_OUT)
 
-// Model policy: opus = planner ONLY. All reviewer seats (round-1 lens panels and
-// round-2+ single re-reviewers, plan and code) are codex via haiku wrappers —
-// opus reviews only in offline harness analysis/tuning sessions (/reflect,
-// notes/harness-tuning-log.md), never inside this workflow.
+// Model policy: opus = planner + plan-reviser. The reviser was upgraded to opus
+// 2026-07-26: it holds the hardest job in the loop (a finding + its exact resolution
+// mechanism + the live codebase + the whole plan's contract web, simultaneously), and
+// every documented reviser-caused non-convergence (wf_ead81b27 mechanism substitution,
+// wf_2677abe5 missed instance, wf_e87d6402 false claim) was the sonnet reviser. All
+// reviewer seats (round-1 lens panels and round-2+ single re-reviewers, plan and code)
+// are codex via haiku wrappers — opus reviews only in offline harness analysis/tuning
+// sessions (/reflect, notes/harness-tuning-log.md), never inside this workflow.
 // haiku = codex wrappers + parse ferry (runs parse-plan.cjs and copies its skeleton
 // JSON; model extraction only as fallback when the script rejects the plan);
-// sonnet = implementer/retry/validation/reviser/fixer.
+// sonnet = implementer/retry/validation/triage/code-fixer.
 // ---------- shared prompt fragments ----------
 const RESULT_NOTE = 'Run long commands in the FOREGROUND with an explicit timeout (e.g. `timeout 590 <cmd>`) — never `run_in_background`: ending your turn while waiting on a background command kills the task without a report. Return structured output: status (SUCCESS|FAILURE), summary (1-2 sentences), filesChanged (list), testOutput (pass/fail counts and the command), issues ("None" if none). Do NOT create git commits.'
 
@@ -519,12 +523,17 @@ if (!parsed?.tasks?.length) return { status: 'FAILED', stage: 'parse', planPath,
 log(`Found ${parsed.tasks.length} tasks to execute`)
 
 // ---------- Phase: Plan review (gated) ----------
-// Round 1 is a parallel lens panel (all seams exist from the start — catch them at
-// once). Later rounds are single full reviewers. Loop-until-dry: keep revising while
-// each round surfaces NEW determined findings. A REPEAT of an applied resolution gets
-// ONE targeted verbatim-apply grace round (both observed repeat-stops, wf_2677abe5 and
-// wf_ead81b27, were reviser misses on a converging loop, not overloaded tasks); a
-// repeat after that stops immediately. Hard backstop: 4 rounds.
+// EVERY round is a parallel lens panel (2026-07-26, wf_309ff903): a single re-reviewer
+// surfaces ~1 new genuine defect per round, so a dense contract web dribbled out over
+// 4-5 rounds even with an opus reviser applying clean fixes — the loop was
+// reviewer-driven, not reviser-driven. Panelling every round exhausts the defect pool
+// in one pass, which is what lets the cap drop to 2: r1 panel → revise → r2 panel →
+// (revise) → Execute. At the 2-round cap, determined findings are applied ONE final
+// time and the run PROCEEDS (no UNRESOLVED bail) — surfaced as planFinalUnverified;
+// this ends the orchestrator hand-off / round-budget-reset meta-loop, with code review
+// as the downstream net for any ripple. A REPEAT (required fix demonstrably absent) is
+// the exception that still bails: it means fixes aren't landing, so proceeding is
+// unsafe — one verbatim-apply grace round, then UNRESOLVED. Hard backstop: 2 rounds.
 phase('Plan review')
 let planReview = skipPlanReview
   ? 'SKIPPED (skipPlanReview — findings applied manually after an UNRESOLVED_PLAN stop)'
@@ -535,8 +544,12 @@ let planNits = []
 // They ride into that task's implementer prompt for free instead of costing a gated
 // revise round. Populated after the loop from every round's nits.
 let planAdvisories = []
+// Determined findings applied at the 2-round cap without a further re-gating panel
+// (option A, 2026-07-26): reported so the orchestrator/user knows exactly what shipped
+// unverified into Execute. Code review is the downstream net.
+let planFinalUnverified = []
 if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
-  const MAX_REVIEW_ROUNDS = 4
+  const MAX_REVIEW_ROUNDS = 2
   const applied = []
   const knownNits = [] // every nit seen so far — re-reviewers get them as known/non-escalatable (a nit re-found as blocking cost a full round on wf_f72ce22c)
   let repeatGraceUsed = false
@@ -546,7 +559,8 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
   // round's carried DETERMINED findings straight to the reviser instead of re-running
   // the panel — a fresh panel re-derives only part of what the paused panel found and
   // spends most of its tokens restating the chosen resolutions once per panelist. The
-  // single full reviewer at round 2 then verifies the revised plan in one coherent pass.
+  // round-2 panel then verifies the revised plan; round 2 is the cap, so on resume that
+  // panel is the final gate (its findings apply-and-proceed, no further re-review).
   if (decisions.length) {
     // Restore the paused loop's context: without these, a mid-loop NEEDS_DECISION
     // pause resumes with empty applied[]/knownNits and the re-reviewer re-litigates
@@ -557,8 +571,8 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
       ...decisions.map(d => `USER DECISION — conflict: ${d.conflict} RESOLUTION to apply: ${d.resolution} Apply this resolution everywhere the plan touches the conflict (task What/Tests/Done-when fields, Shared Contract rows, acceptance criteria). If the plan already reflects it, make no edit for this item.`),
       ...carriedFindings,
     ]
-    log(`Resuming with ${decisions.length} decision(s) + ${carriedFindings.length} carried finding(s) — reviser-first, then a single full re-review`)
-    const rev = await agent(planReviserPrompt(seeded, revised + 1), { label: `plan revise r${revised + 1}`, model: 'sonnet', phase: 'Plan review', schema: AGENT_RESULT })
+    log(`Resuming with ${decisions.length} decision(s) + ${carriedFindings.length} carried finding(s) — reviser-first, then a final verification panel`)
+    const rev = await agent(planReviserPrompt(seeded, revised + 1), { label: `plan revise r${revised + 1}`, model: 'claude-opus-4-8', phase: 'Plan review', schema: AGENT_RESULT })
     if (rev?.status !== 'SUCCESS') {
       return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: seeded, reason: 'Reviser failed while applying user decisions + carried findings.', nits: planNits }
     }
@@ -566,30 +580,26 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
     revised++
     parsed = await parseTasks(revised + 1)
     if (!parsed?.tasks?.length) return { status: 'FAILED', stage: 'parse', planPath, reason: 'Re-parse after decision revision found no tasks.' }
-    round = 2 // the lens panel already ran before the pause — resume with single full reviewers
+    round = 2 // the panel already ran before the pause — resume at the cap: one verification panel, then proceed
   }
   for (; ; round++) {
-    let r
-    if (round === 1) {
-      const raw = await parallel(REVIEW_LENSES.map(l => () =>
-        agent(codexPlanReviewerPrompt(l), { label: `plan review r1:codex:${l.key}`, model: 'haiku', phase: 'Plan review', schema: CODEX_PLAN_OUT })))
-      const panel = raw.filter(p => p && p.verdict !== 'UNAVAILABLE')
-      log(`codex lens panelists up: ${panel.length}/${REVIEW_LENSES.length}`)
-      if (!panel.length) {
-        const outage = raw.some(p => p?.verdict === 'UNAVAILABLE')
-        return { status: 'FAILED', stage: 'plan-review', planPath, reason: outage ? 'Codex CLI unavailable — all lens panelists returned UNAVAILABLE; plan not reviewed. Resume when codex is back.' : 'All panel reviewers died.' }
-      }
-      r = {
-        verdict: panel.some(p => p.verdict === 'NEEDS_WORK') ? 'NEEDS_WORK' : 'PASS',
-        determined: panel.flatMap(p => p.determined ?? []),
-        needsDecision: panel.flatMap(p => p.needsDecision ?? []),
-        repeats: panel.flatMap(p => p.repeats ?? []),
-        nits: panel.flatMap(p => p.nits ?? []),
-      }
-    } else {
-      r = await agent(codexPlanReviewerPrompt(null, round, applied, knownNits), { label: `plan review r${round}:codex`, model: 'haiku', phase: 'Plan review', schema: CODEX_PLAN_OUT })
-      if (!r) return { status: 'FAILED', stage: 'plan-review', planPath, reason: 'Plan reviewer agent died.' }
-      if (r.verdict === 'UNAVAILABLE') return { status: 'FAILED', stage: 'plan-review', planPath, reason: `Codex CLI unavailable at plan-review round ${round} — revised plan not verified. Resume when codex is back.` }
+    // Panel every round (not just r1): parallel lens seats each get the applied[] +
+    // knownNits context in r≥2 so they don't re-litigate fixed work. An exhaustive
+    // panel each round is what makes the 2-round cap safe.
+    const raw = await parallel(REVIEW_LENSES.map(l => () =>
+      agent(codexPlanReviewerPrompt(l, round, applied, knownNits), { label: `plan review r${round}:codex:${l.key}`, model: 'haiku', phase: 'Plan review', schema: CODEX_PLAN_OUT })))
+    const panel = raw.filter(p => p && p.verdict !== 'UNAVAILABLE')
+    log(`plan review r${round}: codex lens panelists up: ${panel.length}/${REVIEW_LENSES.length}`)
+    if (!panel.length) {
+      const outage = raw.some(p => p?.verdict === 'UNAVAILABLE')
+      return { status: 'FAILED', stage: 'plan-review', planPath, reason: outage ? `Codex CLI unavailable at plan-review round ${round} — all lens panelists returned UNAVAILABLE; plan not reviewed. Resume when codex is back.` : 'All panel reviewers died.' }
+    }
+    const r = {
+      verdict: panel.some(p => p.verdict === 'NEEDS_WORK') ? 'NEEDS_WORK' : 'PASS',
+      determined: panel.flatMap(p => p.determined ?? []),
+      needsDecision: panel.flatMap(p => p.needsDecision ?? []),
+      repeats: panel.flatMap(p => p.repeats ?? []),
+      nits: panel.flatMap(p => p.nits ?? []),
     }
     // Wrappers sometimes leave codex's "REPEAT:" prefix inside determined (seen on
     // wf_744f8f49) — reclassify by prefix so a repeat stops the loop instead of
@@ -626,7 +636,7 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
         ...(r.determined ?? []),
       ]
       log(`Plan review round ${round}: ${r.repeats.length} repeat(s) — one grace revise round, resolutions apply verbatim`)
-      const rev = await agent(planReviserPrompt(graceFindings, revised + 1, planNits), { label: `plan revise r${revised + 1} (repeat grace)`, model: 'sonnet', phase: 'Plan review', schema: AGENT_RESULT })
+      const rev = await agent(planReviserPrompt(graceFindings, revised + 1, planNits), { label: `plan revise r${revised + 1} (repeat grace)`, model: 'claude-opus-4-8', phase: 'Plan review', schema: AGENT_RESULT })
       if (rev?.status !== 'SUCCESS') {
         return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: r.repeats, reason: 'Reviser failed during the repeat grace round.', nits: planNits }
       }
@@ -641,11 +651,9 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
       planReview = revised ? `PASS (after ${revised} revise rounds)` : 'PASS'
       break
     }
-    if (round >= MAX_REVIEW_ROUNDS) {
-      return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: det, reason: `Hit the ${MAX_REVIEW_ROUNDS}-round backstop with new findings still appearing.`, nits: planNits }
-    }
-    log(`Plan review round ${round}: ${det.length} determined finding(s) — spawning reviser`)
-    const rev = await agent(planReviserPrompt(det, revised + 1, planNits), { label: `plan revise r${revised + 1}`, model: 'sonnet', phase: 'Plan review', schema: AGENT_RESULT })
+    const isFinal = round >= MAX_REVIEW_ROUNDS
+    log(`Plan review round ${round}: ${det.length} determined finding(s) — spawning reviser${isFinal ? ' (final apply at cap, not re-gated)' : ''}`)
+    const rev = await agent(planReviserPrompt(det, revised + 1, planNits), { label: `plan revise r${revised + 1}${isFinal ? ' (final, not re-gated)' : ''}`, model: 'claude-opus-4-8', phase: 'Plan review', schema: AGENT_RESULT })
     if (rev?.status !== 'SUCCESS') {
       return { status: 'UNRESOLVED_PLAN', planPath, planReview: 'UNRESOLVED', findings: det, reason: 'Reviser failed.', nits: planNits }
     }
@@ -653,6 +661,17 @@ if (!skipPlanReview && (autoPlanned || parsed.tasks.length > 2)) {
     revised++
     parsed = await parseTasks(revised + 1) // reviser edited the plan — re-parse before executing
     if (!parsed?.tasks?.length) return { status: 'FAILED', stage: 'parse', planPath, reason: 'Re-parse after revision found no tasks.' }
+    if (isFinal) {
+      // 2-round cap reached with findings still appearing: the reviser has just applied
+      // them, but no further panel verifies that apply. Proceed to Execute rather than
+      // bailing to UNRESOLVED — the bail re-triggered the orchestrator hand-off and reset
+      // the round budget (wf_309ff903 ran past the old 4-round backstop). Code review is
+      // the net for any unverified ripple.
+      planFinalUnverified = det
+      planReview = `PASS (${det.length} finding(s) applied at the ${MAX_REVIEW_ROUNDS}-round cap, NOT re-gated; after ${revised} revise rounds)`
+      log(`Plan review cap: applied ${det.length} final finding(s) unverified and proceeding to Execute`)
+      break
+    }
   }
   planAdvisories = knownNits.filter(n => /ADVISORY\(T[^)]+\)/i.test(n))
   if (planAdvisories.length) log(`${planAdvisories.length} advisory finding(s) will ride into their tasks' implementer prompts`)
@@ -814,4 +833,5 @@ return {
   nits: reviewNits,
   planNits,
   planAdvisories,
+  planFinalUnverified,
 }

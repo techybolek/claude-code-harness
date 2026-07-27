@@ -4,6 +4,56 @@ Rolling log of reviewer/panel evaluations and the harness changes they produced.
 
 ---
 
+## 2026-07-26 (night, latest) — Plan review restructured: panel EVERY round + 2-round cap + apply-and-proceed (`run-review-flow.js`, uncommitted; user-approved)
+
+`wf_309ff903` (fresh run behind the opus-reviser change, entry below) proved the reviser was never the bottleneck: the opus reviser applied clean fixes with **zero REPEATs, zero substitution-contradictions, zero re-raised NEEDS_DECISIONs, count 10→2→1→1** — and the loop STILL didn't converge to PASS. Diagnosis: **reviewer-driven, not reviser-driven.** A single re-reviewer surfaces ~1 new genuine cross-task defect per round (r2 audit-body mismatch, r3 field_name logical-vs-physical, r4 GET/audit TOP-500 cap — all distinct, real), so a dense contract web (6 shared contracts §A–§F × 7 tasks) dribbles out over many rounds no matter how good the fixer is. Plus the orchestrator's NEEDS_DECISION resume reset the round counter → the run sailed past the old 4-round backstop (the recurring "relaunch resets convergence state" meta-loop). Opus-reviser timings confirmed real work (pin held: all 4 revisers on `claude-opus-4-8`, 37s for a single trivial finding up to 6m40s for the 12-finding batch — not rubber-stamping).
+
+User's framing: "cut the number of reviews AND make each round more productive." The two are one lever — a single reviewer is *why* the loop needs many rounds; an exhaustive panel each round is what *lets* the cap drop.
+
+### Changes applied (`run-review-flow.js` plan-review loop; syntax-checked, async-wrapped `node --check` stripping the `export` keyword)
+
+1. **Panel every round, not just r1.** The loop now runs the 3-seat codex lens panel on every round (was: r1 panel, r≥2 single reviewer). r≥2 panelists get the `applied[]`+`knownNits` context (the prompt builder already threaded them). Exhausts the defect pool in one pass instead of dribbling ~1/round. Partial outage now degrades gracefully at every round (survivors proceed; all-down → FAILED).
+2. **`MAX_REVIEW_ROUNDS` 4 → 2.** Safe *because* of #1: r1 panel → revise → r2 panel → (revise) → Execute.
+3. **Apply-and-proceed at the cap (option A, chosen over keeping the UNRESOLVED bail).** At round 2 with determined findings still present, the reviser applies them ONE final time and the run **proceeds to Execute** — no UNRESOLVED_PLAN. Ends the orchestrator hand-off / round-budget-reset meta-loop that has caused ~half the never-ending-loop episodes. The final applied findings are surfaced as `planFinalUnverified` in the result (new field) so the orchestrator/user knows exactly what shipped without a verifying panel. Code review is the downstream net for any ripple.
+4. **REPEAT stays the one bail.** A REPEAT (required fix demonstrably absent → fixes aren't landing) is unsafe to proceed on, so it keeps the grace-round-then-UNRESOLVED path. With MAX=2 a repeat first-seen at r2 bails immediately (no grace room) — acceptable: repeats should be near-zero with the opus reviser + no-substitution rule.
+
+Net: **≤2 exhaustive panels, fully autonomous, hard-bounded**, vs. the old up-to-4-that-resets-on-resume. Cost trade: +2 codex seats/round, far fewer rounds — expected net token/wall drop and, more importantly, a bounded ceiling.
+
+### Open items
+
+- **Zero runs behind all of it.** Watch the next fresh run for: (a) does r2 panel actually clear the pool (few/no r2 determined) or does apply-and-proceed fire routinely — if it fires every run with real cross-task findings, MAX=2 may be one round too tight (bump to 3); (b) does code review catch the `planFinalUnverified` ripples, or do they reach delivery; (c) per-round cost with 3 seats every round vs. the round savings.
+- **run-flow.md not yet updated** (flagged to user, not auto-edited): UNRESOLVED_PLAN is now rare (only reviser-failure or surviving-REPEAT), and Step 4's report doesn't surface `planFinalUnverified`. Decide whether to update the orchestrator doc.
+- Proposal 2 (reviser autonomy) still held — but note the reload seam recurring r1→r2→r3 even on opus is live evidence that point-fixes-under-binding-resolution can't reconcile an interlocking web; revisit if apply-and-proceed keeps shipping reload-class ripples.
+
+---
+
+## 2026-07-26 (night, later) — Plan reviser upgraded sonnet → opus (`run-review-flow.js`, uncommitted; user-approved)
+
+User's diagnosis of the never-ending plan-review cycle: we've been fixing the wrong lever. The **plan reviser** — the agent that applies findings — ran on sonnet while the planner ran on opus, which is backwards: revision is the harder job (hold a finding + its exact resolution mechanism + the live codebase + the whole plan's contract web at once), and it's where the loop actually breaks. Evidence from this log supports it: every documented reviser-caused non-convergence was the sonnet reviser — `wf_ead81b27` (substituted its own mechanism for the reload seam → self-contradictory §F → abort), `wf_2677abe5` (applied a decision at one line, missed the contradicting instance at another → REPEAT), `wf_e87d6402` (wrote a false codebase claim, JWT expression misattributed across files). Three prompt-level guardrails (binding-resolution rule, claim-verification rule, grace round) were bolted on to compensate for reviser weakness and the cycle still recurred.
+
+- **Change**: all three `planReviserPrompt` spawn sites (decision-resume reviser-first, repeat-grace, normal round) `model: 'sonnet'` → `model: 'claude-opus-4-8'` (pinned literal, not `'opus'` — broken-alias memory `opus-alias-broken-2-1-219`). Model-policy comment updated: opus = planner + plan-reviser; sonnet = implementer/retry/validation/triage/code-fixer. Syntax-checked (async-wrapped `node --check`, stripping only the `export` keyword — `sed '1d'` orphans the meta object).
+- **Scope**: plan reviser only. The code-review fixer, triage, implementer, and validation stay sonnet — user's concern was specifically the plan-review cycle.
+- **NOT done — proposal 2 (more reviser autonomy), deliberately held.** User felt weaker about it and agreed to one-variable-at-a-time: the binding-resolution rule (no mechanism substitution) exists *because* the sonnet reviser substituted a mechanism (`wf_ead81b27`); loosening it the same moment we change the model removes a failure-justified guardrail and confounds attribution. Revisit only if the opus reviser is visibly hamstrung — e.g. it identifies a better seam mechanism but is forced to dump it in `issues` because the finding's stated resolution was suboptimal (concrete case = the evidence to loosen).
+
+### Live state when this landed: `wf_96430e35` (session 4d63af87), 9th run on admin-financial-override, still in plan review r2
+
+Evaluated mid-run. r1 panel (post-NEEDS_DECISION resume, reviser-first) → r2 single reviewer surfaced **2 determined, 0 needsDecision, 0 nits** — both the chronic contracts, and both genuine plan-internal coherence gaps (checked against the tech-spec 🔒 block; neither is a settled item illegitimately re-raised):
+1. **Reload-across-the-seam contradiction** — `RowEditProvider.openEditor(row, model): void` has no return channel, yet SC-6/settled block require the dialog to "emit a committed-change result" that triggers the table reload. This is exactly the seam `wf_ead81b27`'s sonnet reviser botched.
+2. **Atomicity/rollback has no verification path** — SC-7 claims atomicity "proven end-to-end" but SC-4's rollback invariant can't be forced (no way to drive a zero-row UPDATE).
+- This edit does NOT affect `wf_96430e35` (runs its persisted pre-edit copy) — opus reviser takes effect on the next launch only.
+
+### Deeper root cause flagged, then DECLINED (correctly) by the user
+
+I proposed hand-fixing the spec seam (`openEditor(): void` has no return channel for the committed-change result the settled block requires; the planner re-injects the contradiction every re-plan). **User rejected it on principle, and was right:** (1) opus is capable enough to resolve the gap per-run; (2) the harness MUST be robust to imperfect specs by design — if convergence depends on a human hand-correcting each spec, the pipeline isn't resilient, it's outsourcing its hard job to spec-curation that will never be perfect, and re-introducing exactly the manual-escalation dependency the autonomy boundary forbids. The opus reviser IS the protection against spec defects; paying a review round to re-derive and fix a gap is the *cost of resilience*, not a defect to design away. Do NOT hand-patch specs to force convergence. (General version of the idea — persisting reviewer-derived resolutions across re-plans so the cost isn't re-paid every launch — remains a possible future lever but is a bigger design question, not pursued now.)
+
+### Open items (refreshed)
+
+- **Opus reviser: zero runs behind it.** Watch the next launch for (a) whether r≥2 rounds shrink — does the opus reviser resolve the reload seam without creating a contradiction (the `wf_ead81b27` failure mode); (b) whether reviser-introduced defects (false claims, missed instances, mechanism substitution) drop; (c) reviser wall/token cost delta (1–3 calls/run, small vs. a full gated round); (d) whether it starts reporting genuine resolution conflicts in `issues` rather than forcing a bad fix — that's the signal that proposal 2 (autonomy) is worth reopening.
+- Seam-in-spec durable fix: DECLINED on principle (above) — do not re-propose hand-fixing specs to force convergence.
+- All prior-entry open items still stand (parse-ferry fidelity, ADVISORY channel, plan-severity floor, GAP_FILL watch).
+
+---
+
 ## 2026-07-26 (night) — Parse phase: deterministic `parse-plan.cjs` replaces the haiku model parse (`run-review-flow.js` + new `workflows/parse-plan.cjs`, uncommitted)
 
 User-requested change, iterated twice in one session. v1 (haiku echoes the raw plan → JS parses in-script) shipped and immediately proved WORSE on latency: the echo ferried the whole 40–47KB plan through haiku (~12k output tokens, ~3 min on `wf_7ccc4fae` — vs ~1 min for the old model parse). User called it out. Root constraint verified by live probe (`wf_29f6c466`): the workflow sandbox has NO `fs`/`require`/`process`/`fetch` and `eval` is blocked — every byte entering a script goes through some model's output, so "free" in-script file reading is impossible. v2 minimizes the ferry instead:
