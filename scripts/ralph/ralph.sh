@@ -76,9 +76,23 @@ ensure_worktrees_dir() {
 }
 
 # Check if worktree already exists
+# A worktree "exists" only if it is both registered AND live on disk (.git link
+# present) — a registration alone survives `rm -rf worktrees/` and would make us
+# skip creation, leaving later steps to run against a hollow directory that git
+# resolves to the MAIN repo.
 worktree_exists() {
     local worktree_path="$1"
-    git -C "$PROJECT_ROOT" worktree list | grep -q "$worktree_path"
+    git -C "$PROJECT_ROOT" worktree list | grep -q "$worktree_path" && [ -f "$worktree_path/.git" ]
+}
+
+# Detect and clear a stale registration (registered, but no valid checkout on disk).
+prune_stale_worktree() {
+    local worktree_path="$1"
+    if git -C "$PROJECT_ROOT" worktree list | grep -q "$worktree_path" && [ ! -f "$worktree_path/.git" ]; then
+        log_info "Stale worktree registration at $worktree_path — pruning and removing leftovers" >&2
+        rm -rf "$worktree_path"
+        git -C "$PROJECT_ROOT" worktree prune >&2
+    fi
 }
 
 # Get branch name for a task
@@ -94,6 +108,9 @@ create_worktree() {
 
     # Ensure worktrees directory exists
     ensure_worktrees_dir >&2
+
+    # Clear any stale registration left by a deleted worktrees/ directory
+    prune_stale_worktree "$worktree_path"
 
     # Check if worktree already exists
     if worktree_exists "$worktree_path"; then
@@ -112,6 +129,35 @@ create_worktree() {
     fi
 
     echo "$worktree_path"
+}
+
+# Propagate machine-local state a fresh checkout lacks:
+# 1. skip-worktree files (self-enumerating via git ls-files -v) — local edits git
+#    deliberately hides, e.g. a dev-only auth bypass; a worktree gets the pristine
+#    version and silently diverges from the working local setup.
+# 2. a per-project hook in ~/.claude/scripts/ralph/worktree-hooks/<path-slug>.sh
+#    for gitignored runtime files (nested .env, captured auth state, …) that no
+#    generic rule can enumerate. Harness-neutral args: <project_root> <worktree_path>.
+# Idempotent — safe on existing worktrees.
+setup_worktree_local_state() {
+    local worktree_path="$1"
+
+    git -C "$PROJECT_ROOT" ls-files -v | awk '/^S /{ $1=""; sub(/^ /,""); print }' | while IFS= read -r f; do
+        if [ -f "$PROJECT_ROOT/$f" ]; then
+            mkdir -p "$worktree_path/$(dirname "$f")"
+            cp "$PROJECT_ROOT/$f" "$worktree_path/$f"
+            # Carry the skip-worktree bit too — it is per-checkout; without it the
+            # copy shows as modified in the worktree and an agent could commit it.
+            git -C "$worktree_path" update-index --skip-worktree "$f"
+            log_info "Propagated skip-worktree file: $f"
+        fi
+    done
+
+    local hook="$HOME/.claude/scripts/ralph/worktree-hooks/$(echo "$PROJECT_ROOT" | tr / -).sh"
+    if [ -x "$hook" ]; then
+        log_info "Running worktree hook: $hook"
+        "$hook" "$PROJECT_ROOT" "$worktree_path" || log_error "Worktree hook failed (continuing)"
+    fi
 }
 
 # Copy environment and secret files to worktree (including .example for structure reference)
@@ -402,6 +448,7 @@ main() {
 
     # Copy environment files to worktree
     copy_env_files "$worktree_path"
+    setup_worktree_local_state "$worktree_path"
 
     # Ensure .runs directory exists inside worktree
     mkdir -p "$worktree_path/.runs/${task_dir}"
