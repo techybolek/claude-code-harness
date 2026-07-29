@@ -13,12 +13,20 @@ Ralph is a test-driven, self-continuing agent that automates work on `SPEC/ACTIV
 The shell script uses `--dangerously-skip-permissions` which is required for Ralph's autonomous operation. When run from IDE, Claude Code uses `.claude/settings.json` which has permission restrictions that interrupt Ralph's workflow.
 
 ```bash
-# Open a terminal and run:
+# Open a terminal and run (RECOMMENDED — implement loop + code-review loop):
+~/.claude/scripts/ralph/ralph-pipeline.sh
+
+# Implement loop only:
 ~/.claude/scripts/ralph/ralph.sh
 
 # Run with custom iterations
-~/.claude/scripts/ralph/ralph.sh 10
+~/.claude/scripts/ralph/ralph-pipeline.sh 10
 ```
+
+`ralph-pipeline.sh` runs ralph.sh, then a `review-flow-only` panel over the
+finished branch and commits the fixes — validated 2026-07-28 as catching most
+of what the bare loop ships (see `~/.claude/scripts/ralph/README.md` for the
+full pipeline docs, per-project hooks, and review config).
 
 ## Key Features
 
@@ -216,6 +224,12 @@ Clean up with: `~/.claude/scripts/ralph/ralph.sh --cleanup`
 ## Configuration
 
 - **Default iterations**: 20
+- **Model**: `RALPH_MODEL` env var, default `claude-sonnet-5` (full model IDs only — aliases resolve to the session model)
 - **Worktree location**: `worktrees/NNNN-<task-name>/`
 - **Branch naming**: `ralph/0001-<task-name>`
 - **Progress file**: `.runs/<task-name>/ralph_progress.txt`
+- **Per-project worktree state**: `~/.claude/scripts/ralph/worktree-hooks/<path-slug>.sh`
+- **Per-project review config**: `~/.claude/scripts/ralph/project-config/<path-slug>.sh`
+- **Exit codes** (ralph.sh): 0 = all tasks done, 2 = max iterations, 1 = error
+
+Full documentation: `~/.claude/scripts/ralph/README.md`

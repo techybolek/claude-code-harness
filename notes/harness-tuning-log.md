@@ -6,6 +6,24 @@ Rolling log of reviewer/panel evaluations and the harness changes they produced.
 
 ---
 
+## 2026-07-28 (evening) — Hybrid calibration: `review-flow-only` over ralph/0002 catches 3/4 known bugs incl. the portal column, plus 5 bugs both A/B reviewers missed (~$10-15, 35m, 11 agents)
+
+Step-0 calibration for the hybrid experiment (session `50f727bb`, workflow `wf_5f47dee3-bea`, 22:37–23:12Z, run inside the ralph worktree with `planPath: SPEC/ACTIVE/0002-admin-financial-override/plan.md`). Ground truth = the 4 reviewer-confirmed bugs from the morning A/B.
+
+**Caught & fixed:** portal empty ACTION column (the decisive cross-app bug — fixed via `determineColumns()` override filtering `editOnly` columns when no editProvider), dead log-page sort (@ViewChild setter), rollback-after-failed-begin. **Missed:** prototype-chain registry lookups (least severe of the 4; still open). **New finds beyond ground truth** (all missed by both fresh-context A/B reviewers): mid-save version-switch race (v1 edit posted against v2 row — fixed by capturing rowId/values pre-POST), duplicate audit rows on partial save + version switch (fixed), missing 1000-char reason cap (fixed + boundary tests, 21/21 live-DB), missing T-16 success toast (fixed), Close/Cancel enabled mid-save → stale table on committed override (**confirmed, unresolved — plateaued**; trivial `[disabled]="saving"` fix pending). Known write-path test gap re-flagged, triaged plan-deferred.
+
+**Economics:** hybrid total ≈ $41–46 / ~101m vs run-flow $60 / 89m — ~25% cheaper, +12m wall clock, comparable-or-better outcome (this pass caught race classes run-flow's build was praised for closing). Validation correctly attributed the only failures (1 backend test, 5 tsc errors) to pre-existing baseline.
+
+**State:** fixer changes UNCOMMITTED in the worktree (7 files, +80/−13). Pre-merge: commit fixes, apply the plateaued dialog fix, optionally add `hasOwnProperty` guard, do the 2-min visual portal check (now also verifies the column fix).
+
+**Verdict:** hybrid thesis strongly supported at calibration. Remaining question for the scored experiment on a fresh feature: does post-hoc review match run-flow's hardening-by-construction when there's no known-bug safety net?
+
+### Open items
+- [ ] Commit ralph/0002 fixer changes; apply `[disabled]="saving"` close-control fix; hasOwnProperty guard.
+- [ ] Scored hybrid experiment on next comparable feature (ralph → review-flow-only → same 2-reviewer rubric, per-stage cost/time).
+
+---
+
 ## 2026-07-28 — Clean A/B rerun on admin-financial-override: run-flow wins quality (8 vs 7, portal-visible bug in ralph's build), ralph wins cost/time (~$31/66m vs ~$60/89m)
 
 The rerun demanded by the 07-27 entry. Both legs started from the same spec pair (`SPEC/FEATURE-REQUEST/admin-financial-override-2026-07-24.md` + tech spec), fresh: **ralph first** (evening of 07-27: `ralph:strategic-plan` session `24bcfec4` at 20:33–20:43, then `ralph.sh` loop session `20260727-205530`, 4 iterations, 20:55–21:52, branch `ralph/0002-admin-financial-override`), **run-flow second** (morning of 07-28: `exec:run-flow` session `4cee5899`, workflow `wf_da4ae36b-29b`, 07:41–09:10, uncommitted on `dev`). Near-identical file layouts came out of both — genuinely comparable artifacts this time.
@@ -60,5 +78,5 @@ For features with a hard cross-app constraint (portal isolation here), run-flow'
 - [ ] Visually confirm the empty ACTION column on the public portal build of ralph/0002 (2-min check).
 - [ ] Decide the hybrid experiment: ralph implement → `review-flow-only` verify, scored against run-flow end-to-end.
 - [ ] Both harnesses: require a committed real-DB write-transaction test (or persisted RV artifact) for audit-critical features.
-- [ ] `ralph.sh`: pin model explicitly; timestamp iter logs; one retry on transient API death (defects 1, 4, 5 — all still open).
+- [ ] `ralph.sh`: pin model explicitly (DONE 2026-07-28: `RALPH_MODEL`, default `claude-sonnet-5`, passed via `--model`); timestamp iter logs; one retry on transient API death (defects 4, 5 still open). Also added 2026-07-28: Hard Invariants section in `strategic-plan.md` + binding rule in `AGENT_PROMPT.md` (re-verify invariants after self-initiated fixes).
 - [ ] Run-flow cost lever: 83M sonnet cache-read tokens ($24.90) — consider narrower per-task file briefs or fewer/larger implementer tasks to cut re-reading.

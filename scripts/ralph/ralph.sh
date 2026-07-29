@@ -13,6 +13,10 @@
 #   ~/.claude/scripts/ralph/ralph.sh --status        # Show current status
 #   ~/.claude/scripts/ralph/ralph.sh --cleanup       # Remove worktree and branch
 #
+# Prefer ralph-pipeline.sh for full runs (adds the code-review loop).
+# Full docs: ~/.claude/scripts/ralph/README.md
+# Exit codes: 0 = all tasks done, 2 = max iterations reached, 1 = error
+#
 # Safety:
 #   - All changes on feature branch (main protected)
 #   - Write/Edit restricted to worktree path via --allowedTools
@@ -40,7 +44,11 @@ NC='\033[0m' # No Color
 
 # Configuration
 PROJECT_ROOT="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROMPTS_DIR="$HOME/.claude/scripts/ralph/prompts"
+# Explicit model ID, not an alias — aliases silently resolve to the session
+# model since CLI 2.1.219. Override per-run with RALPH_MODEL.
+RALPH_MODEL="${RALPH_MODEL:-claude-sonnet-5}"
 
 # Completion markers
 TASK_ITEM_DONE="<ralph>TASK_ITEM_DONE</ralph>"
@@ -67,14 +75,6 @@ get_worktree_path() {
     echo "$WORKTREES_DIR/${task_name}"
 }
 
-# Ensure worktrees directory exists
-ensure_worktrees_dir() {
-    if [ ! -d "$WORKTREES_DIR" ]; then
-        mkdir -p "$WORKTREES_DIR"
-        log_info "Created worktrees directory at $WORKTREES_DIR"
-    fi
-}
-
 # Check if worktree already exists
 # A worktree "exists" only if it is both registered AND live on disk (.git link
 # present) — a registration alone survives `rm -rf worktrees/` and would make us
@@ -85,100 +85,9 @@ worktree_exists() {
     git -C "$PROJECT_ROOT" worktree list | grep -q "$worktree_path" && [ -f "$worktree_path/.git" ]
 }
 
-# Detect and clear a stale registration (registered, but no valid checkout on disk).
-prune_stale_worktree() {
-    local worktree_path="$1"
-    if git -C "$PROJECT_ROOT" worktree list | grep -q "$worktree_path" && [ ! -f "$worktree_path/.git" ]; then
-        log_info "Stale worktree registration at $worktree_path — pruning and removing leftovers" >&2
-        rm -rf "$worktree_path"
-        git -C "$PROJECT_ROOT" worktree prune >&2
-    fi
-}
-
 # Get branch name for a task
 get_branch_name() {
     echo "ralph/${1}"
-}
-
-# Create worktree for task
-create_worktree() {
-    local task_dir="$1"
-    local branch_name=$(get_branch_name "$task_dir")
-    local worktree_path=$(get_worktree_path "$task_dir")
-
-    # Ensure worktrees directory exists
-    ensure_worktrees_dir >&2
-
-    # Clear any stale registration left by a deleted worktrees/ directory
-    prune_stale_worktree "$worktree_path"
-
-    # Check if worktree already exists
-    if worktree_exists "$worktree_path"; then
-        log_info "Worktree already exists at $worktree_path" >&2
-        echo "$worktree_path"
-        return 0
-    fi
-
-    # Check if branch exists
-    if git -C "$PROJECT_ROOT" show-ref --verify --quiet "refs/heads/$branch_name"; then
-        log_info "Branch $branch_name exists, creating worktree..." >&2
-        git -C "$PROJECT_ROOT" worktree add "$worktree_path" "$branch_name" >&2
-    else
-        log_info "Creating new branch $branch_name with worktree..." >&2
-        git -C "$PROJECT_ROOT" worktree add -b "$branch_name" "$worktree_path" >&2
-    fi
-
-    echo "$worktree_path"
-}
-
-# Propagate machine-local state a fresh checkout lacks:
-# 1. skip-worktree files (self-enumerating via git ls-files -v) — local edits git
-#    deliberately hides, e.g. a dev-only auth bypass; a worktree gets the pristine
-#    version and silently diverges from the working local setup.
-# 2. a per-project hook in ~/.claude/scripts/ralph/worktree-hooks/<path-slug>.sh
-#    for gitignored runtime files (nested .env, captured auth state, …) that no
-#    generic rule can enumerate. Harness-neutral args: <project_root> <worktree_path>.
-# Idempotent — safe on existing worktrees.
-setup_worktree_local_state() {
-    local worktree_path="$1"
-
-    git -C "$PROJECT_ROOT" ls-files -v | awk '/^S /{ $1=""; sub(/^ /,""); print }' | while IFS= read -r f; do
-        if [ -f "$PROJECT_ROOT/$f" ]; then
-            mkdir -p "$worktree_path/$(dirname "$f")"
-            cp "$PROJECT_ROOT/$f" "$worktree_path/$f"
-            # Carry the skip-worktree bit too — it is per-checkout; without it the
-            # copy shows as modified in the worktree and an agent could commit it.
-            git -C "$worktree_path" update-index --skip-worktree "$f"
-            log_info "Propagated skip-worktree file: $f"
-        fi
-    done
-
-    local hook="$HOME/.claude/scripts/ralph/worktree-hooks/$(echo "$PROJECT_ROOT" | tr / -).sh"
-    if [ -x "$hook" ]; then
-        log_info "Running worktree hook: $hook"
-        "$hook" "$PROJECT_ROOT" "$worktree_path" || log_error "Worktree hook failed (continuing)"
-    fi
-}
-
-# Copy environment and secret files to worktree (including .example for structure reference)
-copy_env_files() {
-    local worktree_path="$1"
-    local copied=0
-
-    for pattern in .env .secret; do
-        for file in "$PROJECT_ROOT"/${pattern}*; do
-            if [ -f "$file" ]; then
-                local filename=$(basename "$file")
-                cp "$file" "$worktree_path/$filename"
-                log_info "Copied $filename to worktree"
-                copied=$((copied + 1))
-            fi
-        done
-    done
-
-    if [ $copied -eq 0 ]; then
-        log_info "No .env or .secret files found to copy"
-    fi
 }
 
 # Build the agent prompt
@@ -441,14 +350,10 @@ main() {
 
     log_info "Working on task: $task_dir"
 
-    # Create worktree
-    local worktree_path=$(create_worktree "$task_dir")
+    # Provision worktree (creation, env copy, machine-local state, project hook)
+    local worktree_path=$("$SCRIPT_DIR/worktree-setup.sh" "$PROJECT_ROOT" "$task_dir")
 
     log_success "Worktree ready at: $worktree_path"
-
-    # Copy environment files to worktree
-    copy_env_files "$worktree_path"
-    setup_worktree_local_state "$worktree_path"
 
     # Ensure .runs directory exists inside worktree
     mkdir -p "$worktree_path/.runs/${task_dir}"
@@ -478,6 +383,7 @@ main() {
         # Run claude in background so trap can SIGKILL it on Ctrl+C
         pushd "$worktree_path" > /dev/null
         claude --dangerously-skip-permissions \
+            --model "$RALPH_MODEL" \
             --verbose \
             --output-format stream-json \
             --allowedTools "$allowed_tools" \
@@ -532,6 +438,9 @@ main() {
     print_summary "$worktree_path" "$task_dir" "$session_id" "max_iterations"
     echo "  Run again to continue: ~/.claude/scripts/ralph/ralph.sh"
     echo ""
+    # Distinct exit code so callers (ralph-pipeline.sh) can tell an incomplete
+    # run from ALL_TASKS_DONE: 0 = complete, 2 = max iterations, 1 = error.
+    exit 2
 }
 
 # Parse arguments

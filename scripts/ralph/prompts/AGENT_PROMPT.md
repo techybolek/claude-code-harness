@@ -52,6 +52,13 @@ Read ALL three files in the active task folder:
 - `context.md`: Current state, decisions, blockers
 - `tasks.md`: Checklist of items with [ ] and [x] markers
 
+If plan.md has a **Hard Invariants** section, those constraints are binding and
+NOT subject to your judgment. The rest of the plan is direction — invariants are
+contract. Any change that could plausibly affect one (especially a self-initiated
+fix or mid-course correction the plan didn't anticipate) requires re-verifying
+the invariant still holds before marking the item done, and recording how it was
+verified in context.md.
+
 ---
 
 ## TASK SELECTION: SMART BATCHING
@@ -321,6 +328,7 @@ TEST FAILS -> ANALYZE -> FIX -> RE-TEST -> (repeat until green)
 - Skipping the test-first process (define -> test -> implement -> verify)
 - Implementing without clear acceptance criteria
 - Marking tasks complete when tests are still failing
+- Marking a task complete after a change that could affect a Hard Invariant (plan.md) without re-verifying that invariant
 - **Stopping on test failures without attempting to fix**
 - Giving up after first fix attempt (try at least 3 times)
 - Modifying files outside task scope without explicit instruction
