@@ -39,12 +39,14 @@ Read the progress file (`.runs/TASK_DIR/ralph_progress.txt`) to understand:
 - Current task state
 
 ### 3. Baseline Tests
-Run existing tests to establish baseline:
-```bash
-pytest --tb=short -q 2>/dev/null || echo "No pytest tests found"
-ruff check . 2>/dev/null || echo "No ruff check configured"
-```
-**Record baseline state**: Are tests passing/failing before your changes?
+Establish the test baseline using the project's own runner — check `package.json`
+scripts, `Makefile`, `pyproject.toml` (e.g. `npm test`, `npx mocha`, `pytest`),
+plus the project's linter if configured.
+
+- **First iteration** (no green baseline recorded in `ralph_progress.txt`): run the
+  full suite and record the result.
+- **Later iterations**: trust the previous iteration's recorded `regression_passed`
+  entry as the baseline — do NOT re-run the full suite at startup.
 
 ### 4. Task Documentation
 Read ALL three files in the active task folder:
@@ -138,20 +140,35 @@ What user/system outcome does this achieve?
 ### Phase 3: IMPLEMENT
 
 1. Write the minimum code to pass the tests
-2. Follow KISS, YAGNI, SOLID principles
-3. Use appropriate skill if needed (/python-dev, /k8s-dev, etc.)
+2. Use appropriate skill if needed (/python-dev, /k8s-dev, etc.)
 
 ### Phase 4: VERIFY & FIX
 
 1. Run new tests - they should PASS (green)
-2. Run ALL regression tests - they should still PASS
+2. Run the **Regression Scope declared in Phase 1** - impacted tests only, not the
+   full suite. The full suite runs exactly twice per task: first-iteration baseline
+   and once before `ALL_TASKS_DONE`.
 3. **If any test fails -> ANALYZE and FIX immediately:**
    - Read the test output carefully
    - Identify the root cause
    - Fix the implementation (not the test, unless test is wrong)
    - Re-run tests
    - Repeat until all tests pass
-4. Only proceed to Phase 5 when ALL tests are green
+4. Only proceed to Phase 4.5 when ALL tests are green
+
+### Phase 4.5: RUNTIME VERIFICATION
+
+Green tests alone do not complete a task that changes runtime behavior — verify at
+the appropriate boundary:
+
+- **State-changing paths** (DB writes, external mutations): a **committed, repeatable
+  real-backend test** (real DB/service, including rollback/cleanup verification) —
+  never only a one-off manual check.
+- **Backend-only tasks**: targeted integration test(s) covering the affected
+  endpoints satisfy this phase — impacted test files only.
+- **UI tasks**: once per UI surface, at phase completion — start the dev server,
+  drive the feature in a real browser (playwright-cli), check the console for
+  errors, and store a screenshot in `SPEC/ACTIVE/<task-name>/`.
 
 ### Phase 5: DOCUMENT & COMMIT
 
@@ -183,7 +200,8 @@ After completing ALL selected tasks, output ONE marker:
 
 ### All tasks in tasks.md are complete (all `[x]`):
 
-Before outputting this marker, write `.runs/TASK_DIR/SUMMARY.md`:
+Before outputting this marker, run the FULL test suite once (the second and final
+full run), then write `.runs/TASK_DIR/SUMMARY.md`:
 
 ```markdown
 # Ralph Summary — TASK_DIR

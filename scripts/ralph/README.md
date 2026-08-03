@@ -60,13 +60,16 @@ allocates NNNN across SPEC/ACTIVE + SPEC/ARCHIVE.
 
 ```bash
 ralph-pipeline.sh [iterations]     # default 20
+ralph-pipeline.sh --task <spec>    # select spec when SPEC/ACTIVE/ has several
 ralph-pipeline.sh --skip-ralph     # review-only over the existing worktree
                                    # (e.g. after manual fixes)
 ```
 
 Stages:
-1. Finds the first `NNNN-*` task in `SPEC/ACTIVE/`; sources
-   `project-config/<slug>.sh` if present.
+1. Resolves the task: `--task <name>` / `RALPH_TASK=<name>`, else the single
+   `NNNN-*` dir in `SPEC/ACTIVE/` (multiple without `--task` is a hard error —
+   never a silent lowest-number pick). Sources `project-config/<slug>.sh` if
+   present.
 2. Runs `ralph.sh`. Exit 2 (max iterations) stops the pipeline **without**
    reviewing — rerun to continue. Exit ≠0/2 aborts.
 3. Runs `/review-flow-only` headlessly inside the worktree with
@@ -84,8 +87,15 @@ Exit codes: `0` implemented+reviewed · `2` max iterations, no review · `1` err
 
 ```bash
 ralph.sh [iterations]   # default 20
+ralph.sh --task <spec>  # select spec when SPEC/ACTIVE/ has several (or RALPH_TASK env)
 ralph.sh --dry-run | --status | --cleanup | --help
 ```
+
+Task selection follows the same rule as the pipeline: explicit `--task`/
+`RALPH_TASK` wins; otherwise exactly one `NNNN-` dir must be in `SPEC/ACTIVE/`.
+The positional argument is ONLY the iteration count — a non-numeric value is
+rejected with a hint, not silently ignored. After a `complete` run the summary
+reminds you to `git mv` the spec to `SPEC/OLD/` so later runs stay unambiguous.
 
 Each iteration launches a fresh `claude -p` session in the worktree with
 `prompts/AGENT_PROMPT.md` + the task files, and ends with a marker:

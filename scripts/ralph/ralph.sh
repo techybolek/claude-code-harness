@@ -9,9 +9,13 @@
 # Usage:
 #   ~/.claude/scripts/ralph/ralph.sh [iterations]    # Default: 20 iterations
 #   ~/.claude/scripts/ralph/ralph.sh 5               # Run 5 iterations
+#   ~/.claude/scripts/ralph/ralph.sh --task <spec>   # Select spec when several are in SPEC/ACTIVE/
 #   ~/.claude/scripts/ralph/ralph.sh --dry-run       # Show what would happen
 #   ~/.claude/scripts/ralph/ralph.sh --status        # Show current status
 #   ~/.claude/scripts/ralph/ralph.sh --cleanup       # Remove worktree and branch
+#
+# Task selection: --task <name> or RALPH_TASK=<name>; otherwise SPEC/ACTIVE/
+# must contain exactly one NNNN- dir (multiple → hard error, never a silent pick).
 #
 # Prefer ralph-pipeline.sh for full runs (adds the code-review loop).
 # Full docs: ~/.claude/scripts/ralph/README.md
@@ -61,9 +65,37 @@ log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Find active task in SPEC/ACTIVE/ - requires NNNN- prefix
+# Resolve the task to work on. Explicit selection via --task / RALPH_TASK wins;
+# otherwise SPEC/ACTIVE/ must contain exactly ONE NNNN- dir — with several we
+# fail loudly instead of silently picking the lowest number.
+# Prints the task dir on stdout; on failure prints the reason to stderr and
+# outputs nothing (callers treat empty as "stop").
 find_active_task() {
-    ls -1 "$PROJECT_ROOT/SPEC/ACTIVE/" 2>/dev/null | grep -E '^[0-9]{4}-' | sort | head -1
+    local candidates count
+    candidates=$(ls -1 "$PROJECT_ROOT/SPEC/ACTIVE/" 2>/dev/null | grep -E '^[0-9]{4}-' | sort)
+
+    if [ -n "${RALPH_TASK:-}" ]; then
+        if echo "$candidates" | grep -qxF "$RALPH_TASK"; then
+            echo "$RALPH_TASK"
+        else
+            log_error "Task '$RALPH_TASK' not found in SPEC/ACTIVE/. Available:" >&2
+            echo "$candidates" | sed 's/^/  /' >&2
+        fi
+        return 0
+    fi
+
+    count=$(echo -n "$candidates" | grep -c . || true)
+    if [ "$count" -eq 0 ]; then
+        log_error "No active tasks found in SPEC/ACTIVE/ (need a NNNN- prefixed dir)" >&2
+        log_info "Create a task with /ralph:strategic-plan first" >&2
+        return 0
+    fi
+    if [ "$count" -gt 1 ]; then
+        log_error "Multiple tasks in SPEC/ACTIVE/ — select one with --task <name> (or RALPH_TASK env):" >&2
+        echo "$candidates" | sed 's/^/  /' >&2
+        return 0
+    fi
+    echo "$candidates"
 }
 
 # Worktrees directory (inside project, gitignored)
@@ -200,6 +232,10 @@ print_summary() {
         echo "    gh pr create --base main --head $branch_name"
         echo "    ~/.claude/scripts/ralph/ralph.sh --cleanup"
     fi
+    if [ "$final_status" = "complete" ]; then
+        echo "    git mv SPEC/ACTIVE/$task_dir SPEC/OLD/   # archive after merge —"
+        echo "                                             # specs left in ACTIVE make later runs ambiguous"
+    fi
     if [ "$final_status" = "error" ]; then
         echo "  Logs: cat $progress_file"
     fi
@@ -211,12 +247,8 @@ show_status() {
     log_info "Ralph Status"
     echo "============================================"
 
-    # Find active task
     local task_dir=$(find_active_task)
-    if [ -z "$task_dir" ]; then
-        log_warn "No active tasks found in SPEC/ACTIVE/"
-        return 0
-    fi
+    [ -z "$task_dir" ] && return 1
 
     echo "Active task: $task_dir"
 
@@ -254,10 +286,7 @@ show_status() {
 # Cleanup worktree and optionally branch
 cleanup() {
     local task_dir=$(find_active_task)
-    if [ -z "$task_dir" ]; then
-        log_warn "No active task to clean up"
-        return 0
-    fi
+    [ -z "$task_dir" ] && return 1
 
     local worktree_path=$(get_worktree_path "$task_dir")
     local branch_name=$(get_branch_name "$task_dir")
@@ -291,11 +320,7 @@ dry_run() {
     echo "============================================"
 
     local task_dir=$(find_active_task)
-    if [ -z "$task_dir" ]; then
-        log_warn "No active tasks found in SPEC/ACTIVE/"
-        log_info "Create a task with /ralph:dev-docs first"
-        return 0
-    fi
+    [ -z "$task_dir" ] && return 1
 
     local branch_name=$(get_branch_name "$task_dir")
     local worktree_path=$(get_worktree_path "$task_dir")
@@ -312,6 +337,7 @@ dry_run() {
     echo "  Grep(*)"
     echo "  Bash(pytest:*)"
     echo "  Bash(ruff:*)"
+    echo "  Bash(npm test:*) / Bash(npm run:*) / Bash(npx:*) / Bash(node:*)"
     echo "  Bash(git status:*)"
     echo "  Bash(git add:*)"
     echo "  Bash(git commit:*)"
@@ -340,13 +366,9 @@ main() {
     log_info "Max iterations: $max_iterations"
     echo ""
 
-    # Find active task
+    # Find active task (find_active_task reports failures on stderr)
     local task_dir=$(find_active_task)
-    if [ -z "$task_dir" ]; then
-        log_error "No active tasks found in SPEC/ACTIVE/"
-        log_info "Create a task with /ralph:dev-docs first"
-        exit 1
-    fi
+    [ -z "$task_dir" ] && exit 1
 
     log_info "Working on task: $task_dir"
 
@@ -362,7 +384,7 @@ main() {
     log_progress "$worktree_path" "$task_dir" "$session_id" "session_start" "Starting Ralph session with max $max_iterations iterations"
 
     # Build allowed tools restricted to worktree path
-    local allowed_tools="Write(${worktree_path}/**),Edit(${worktree_path}/**),Read(*),Glob(*),Grep(*),Bash(pytest:*),Bash(python -m pytest:*),Bash(ruff check:*),Bash(ruff format:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*)"
+    local allowed_tools="Write(${worktree_path}/**),Edit(${worktree_path}/**),Read(*),Glob(*),Grep(*),Bash(pytest:*),Bash(python -m pytest:*),Bash(ruff check:*),Bash(ruff format:*),Bash(npm test:*),Bash(npm run:*),Bash(npx:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*)"
 
     # Main iteration loop
     for ((i=1; i<=$max_iterations; i++)); do
@@ -444,27 +466,53 @@ main() {
 }
 
 # Parse arguments
-case "${1:-}" in
-    --dry-run)
-        dry_run
-        ;;
-    --status)
-        show_status
-        ;;
-    --cleanup)
-        cleanup
-        ;;
-    --help|-h)
-        echo "Ralph - Self-Continuing Agent for SPEC/ACTIVE Tasks"
-        echo ""
-        echo "Usage:"
-        echo "  ~/.claude/scripts/ralph/ralph.sh [iterations]    Run for N iterations (default: 20)"
-        echo "  ~/.claude/scripts/ralph/ralph.sh --dry-run       Show what would happen"
-        echo "  ~/.claude/scripts/ralph/ralph.sh --status        Show current status"
-        echo "  ~/.claude/scripts/ralph/ralph.sh --cleanup       Remove worktree and branch"
-        echo "  ~/.claude/scripts/ralph/ralph.sh --help          Show this help"
-        ;;
-    *)
-        main "${1:-20}"
-        ;;
+ACTION="run"
+ITERATIONS=20
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry-run) ACTION="dry_run" ;;
+        --status)  ACTION="status" ;;
+        --cleanup) ACTION="cleanup" ;;
+        --task)
+            if [ $# -lt 2 ]; then
+                log_error "--task requires a value (spec dir name in SPEC/ACTIVE/)"
+                exit 1
+            fi
+            RALPH_TASK="$2"
+            shift
+            ;;
+        --task=*)
+            RALPH_TASK="${1#--task=}"
+            ;;
+        --help|-h)
+            echo "Ralph - Self-Continuing Agent for SPEC/ACTIVE Tasks"
+            echo ""
+            echo "Usage:"
+            echo "  ~/.claude/scripts/ralph/ralph.sh [iterations]     Run for N iterations (default: 20)"
+            echo "  ~/.claude/scripts/ralph/ralph.sh --task <spec>    Select spec when SPEC/ACTIVE/ has several"
+            echo "                                                    (env RALPH_TASK=<spec> also works)"
+            echo "  ~/.claude/scripts/ralph/ralph.sh --dry-run        Show what would happen"
+            echo "  ~/.claude/scripts/ralph/ralph.sh --status         Show current status"
+            echo "  ~/.claude/scripts/ralph/ralph.sh --cleanup        Remove worktree and branch"
+            echo "  ~/.claude/scripts/ralph/ralph.sh --help           Show this help"
+            exit 0
+            ;;
+        *)
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                ITERATIONS="$1"
+            else
+                log_error "Unrecognized argument: '$1'"
+                log_error "The positional argument is the iteration count. To select a spec: --task $1"
+                exit 1
+            fi
+            ;;
+    esac
+    shift
+done
+
+case "$ACTION" in
+    dry_run) dry_run ;;
+    status)  show_status ;;
+    cleanup) cleanup ;;
+    run)     main "$ITERATIONS" ;;
 esac

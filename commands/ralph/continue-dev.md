@@ -29,16 +29,6 @@ Read ALL three files in the task folder:
 
 **CRITICAL:** Take time to thoroughly understand the full context before proceeding.
 
-### Step 2.5: Pre-Implementation Check
-
-Before implementing, verify prerequisites exist:
-
-1. **Backend tasks**: Check router/route registered in main application entry point
-2. **Frontend CSS tasks**: Verify CSS variables exist in theme/variables file
-3. **New pages**: Identify parent page needing navigation link
-
-If prerequisites missing, create them FIRST or document as blocker in context.md.
-
 ### Step 3: Apply Extended Thinking
 Before implementing, engage in deep analysis:
 
@@ -46,14 +36,9 @@ Before implementing, engage in deep analysis:
 2. **Review progress** - What has been completed? What's in progress?
 3. **Identify blockers** - Are there any issues noted in context.md?
 4. **Plan next steps** - Which incomplete task should be tackled first?
-5. **Consider dependencies** - Are there prerequisites or related files?
-
-### Step 4: Follow Guidelines
-Always adhere to:
-
-- **CLAUDE.md** (root) - Core principles, testing, checkpoint protocol
-- **.claude/repo_specific/CLAUDE.md** - Project-specific guidelines (if exists)
-- **KISS, YAGNI, SOLID** - Simplest solution, only what's needed, clean design
+5. **Consider dependencies** - Do the task's integration points exist (route
+   registration, exports, navigation)? Create missing prerequisites first, or
+   record them as a blocker in context.md.
 
 ### Step 5: Implement
 Work through incomplete tasks in order:
@@ -69,17 +54,20 @@ As you work, keep SPEC docs current:
 
 ### Step 6.5: Runtime Verification (REQUIRED)
 
-Before marking ANY task complete:
+Verify at the appropriate boundary — not per checkbox:
 
-1. Start the dev server
-2. Navigate to feature in browser
-3. Check DevTools console for errors
-4. Take screenshot of working feature
-5. Store screenshot in `SPEC/ACTIVE/<task-name>/`
+- **Backend-only tasks**: targeted mocha test(s) covering the affected endpoints satisfy this step — impacted test files only, not the full suite.
+- **UI tasks**: once per UI surface, at phase completion:
+  1. Start the dev server
+  2. Navigate to feature in browser
+  3. Check DevTools console for errors
+  4. Take screenshot of working feature
+  5. Store screenshot in `SPEC/ACTIVE/<task-name>/`
 
-**Task is NOT complete until runtime verification passes.**
+**A phase is NOT complete until its runtime verification passes.**
+Never re-run the full test suite to verify a change a targeted test already covers.
 
-Use `[~]` for in-progress tasks, `[x]` only after browser verification.
+Use `[~]` for in-progress tasks, `[x]` only after the verification above.
 
 **context.md updates:**
 - SESSION PROGRESS section with today's date
@@ -93,11 +81,9 @@ Use `[~]` for in-progress tasks, `[x]` only after browser verification.
 - Note in-progress work
 
 ### Step 7: Checkpoint Protocol
-Follow CLAUDE.md checkpoint rules - always ask before:
-- Architectural decisions
-- Adding/removing dependencies
-- Deleting or significantly refactoring code
-- Modifying configuration files
+Ask only before destructive or scope-changing decisions (deleting/significantly
+refactoring existing code, adding/removing dependencies). For everything else,
+decide and record the rationale in context.md.
 
 ## Error Handling
 

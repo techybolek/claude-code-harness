@@ -11,7 +11,11 @@
 #
 # Usage:
 #   cd <project_root> && ~/.claude/scripts/ralph/ralph-pipeline.sh [iterations]
+#   ~/.claude/scripts/ralph/ralph-pipeline.sh --task <spec>  # select spec when several are ACTIVE
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-ralph   # review-only, e.g. rerun
+#
+# Task selection: --task <name> or RALPH_TASK=<name>; otherwise SPEC/ACTIVE/
+# must contain exactly one NNNN- dir (multiple → hard error, never a silent pick).
 #
 # Per-project review config (optional), sourced from
 # ~/.claude/scripts/ralph/project-config/<path-slug>.sh:
@@ -38,22 +42,60 @@ log_error() { echo -e "${RED}[PIPELINE]${NC} $1"; }
 
 SKIP_RALPH=0
 ITERATIONS=20
-for arg in "$@"; do
-    case "$arg" in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --skip-ralph) SKIP_RALPH=1 ;;
+        --task)
+            if [ $# -lt 2 ]; then
+                log_error "--task requires a value (spec dir name in SPEC/ACTIVE/)"
+                exit 1
+            fi
+            RALPH_TASK="$2"
+            shift
+            ;;
+        --task=*)
+            RALPH_TASK="${1#--task=}"
+            ;;
         --help|-h)
-            sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
-        *) ITERATIONS="$arg" ;;
+        *)
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                ITERATIONS="$1"
+            else
+                log_error "Unrecognized argument: '$1'"
+                log_error "The positional argument is the iteration count. To select a spec: --task $1"
+                exit 1
+            fi
+            ;;
     esac
+    shift
 done
 
-# Same active-task convention as ralph.sh
-TASK_DIR=$(ls -1 "$PROJECT_ROOT/SPEC/ACTIVE/" 2>/dev/null | grep -E '^[0-9]{4}-' | sort | head -1)
-if [ -z "$TASK_DIR" ]; then
-    log_error "No active tasks found in SPEC/ACTIVE/"
-    exit 1
+# Same task-selection rules as ralph.sh: --task/RALPH_TASK wins; otherwise
+# exactly one NNNN- dir must be in SPEC/ACTIVE/ — several is a hard error,
+# never a silent lowest-number pick.
+CANDIDATES=$(ls -1 "$PROJECT_ROOT/SPEC/ACTIVE/" 2>/dev/null | grep -E '^[0-9]{4}-' | sort)
+if [ -n "${RALPH_TASK:-}" ]; then
+    if ! echo "$CANDIDATES" | grep -qxF "$RALPH_TASK"; then
+        log_error "Task '$RALPH_TASK' not found in SPEC/ACTIVE/. Available:"
+        echo "$CANDIDATES" | sed 's/^/  /'
+        exit 1
+    fi
+    TASK_DIR="$RALPH_TASK"
+else
+    COUNT=$(echo -n "$CANDIDATES" | grep -c . || true)
+    if [ "$COUNT" -eq 0 ]; then
+        log_error "No active tasks found in SPEC/ACTIVE/"
+        exit 1
+    fi
+    if [ "$COUNT" -gt 1 ]; then
+        log_error "Multiple tasks in SPEC/ACTIVE/ — select one with --task <name> (or RALPH_TASK env):"
+        echo "$CANDIDATES" | sed 's/^/  /'
+        exit 1
+    fi
+    TASK_DIR="$CANDIDATES"
 fi
 log_info "Task: $TASK_DIR"
 
@@ -71,7 +113,7 @@ fi
 if [ "$SKIP_RALPH" -eq 0 ]; then
     log_info "Stage: ralph implement loop (max $ITERATIONS iterations)"
     ralph_rc=0
-    "$SCRIPT_DIR/ralph.sh" "$ITERATIONS" || ralph_rc=$?
+    "$SCRIPT_DIR/ralph.sh" --task "$TASK_DIR" "$ITERATIONS" || ralph_rc=$?
     case $ralph_rc in
         0) log_success "Ralph completed all tasks" ;;
         2) log_warn "Ralph hit max iterations — NOT running review over an incomplete build."
