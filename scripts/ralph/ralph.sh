@@ -404,12 +404,16 @@ main() {
 
         # Run claude in background so trap can SIGKILL it on Ctrl+C
         pushd "$worktree_path" > /dev/null
-        claude --dangerously-skip-permissions \
+        # Prompt via stdin, NOT argv: with -p "$prompt" the full prompt (marker
+        # strings included) sits in /proc/*/cmdline, so any agent `ps` echoes it
+        # into a tool result and thus into this log (0002-e2e-portal-pages,
+        # 2026-08-02: false ALL_TASKS_DONE on iteration 1 of 20).
+        printf '%s' "$prompt" | claude --dangerously-skip-permissions \
             --model "$RALPH_MODEL" \
             --verbose \
             --output-format stream-json \
             --allowedTools "$allowed_tools" \
-            -p "$prompt" > "$log_file" 2>&1 &
+            -p > "$log_file" 2>&1 &
         CLAUDE_PID=$!
         wait $CLAUDE_PID || exit_code=$?
         CLAUDE_PID=""
@@ -425,22 +429,33 @@ main() {
             exit 1
         fi
 
-        # Check for completion markers in log file
+        # Check for completion markers — ONLY in the agent's final result text.
+        # A whole-log grep false-positives: tool results (ps output, cat of an
+        # old iter log) can echo the prompt's marker instructions into the
+        # stream-json log, which is exactly how 0002-e2e-portal-pages
+        # (2026-08-02) exited all_complete on iteration 1 with ~10% of the
+        # plan done.
         local branch_name=$(get_branch_name "$task_dir")
+        local final_result
+        final_result=$(grep '"type":"result"' "$log_file" | tail -1 | jq -r '.result // ""' 2>/dev/null)
+        [ -z "$final_result" ] && log_warn "No result record found in $log_file"
 
-        if grep -qF "$ALL_TASKS_DONE" "$log_file"; then
-            log_progress "$worktree_path" "$task_dir" "$session_id" "all_complete" "All tasks completed"
-            print_summary "$worktree_path" "$task_dir" "$session_id" "complete"
-            exit 0
-        fi
-
-        if grep -qF "$ERROR_STOP" "$log_file"; then
+        if printf '%s' "$final_result" | grep -qF "$ALL_TASKS_DONE"; then
+            # ALL_TASKS_DONE is only valid with the SUMMARY.md the prompt makes
+            # the agent write first — a completion claim without it is treated
+            # as an unfinished iteration, not a completed run.
+            if [ -f "$worktree_path/.runs/${task_dir}/SUMMARY.md" ]; then
+                log_progress "$worktree_path" "$task_dir" "$session_id" "all_complete" "All tasks completed"
+                print_summary "$worktree_path" "$task_dir" "$session_id" "complete"
+                exit 0
+            fi
+            log_warn "ALL_TASKS_DONE claimed without .runs/${task_dir}/SUMMARY.md — treating as incomplete, continuing"
+            log_progress "$worktree_path" "$task_dir" "$session_id" "no_marker" "Iteration $i claimed ALL_TASKS_DONE without SUMMARY.md — continuing"
+        elif printf '%s' "$final_result" | grep -qF "$ERROR_STOP"; then
             log_progress "$worktree_path" "$task_dir" "$session_id" "error_stop" "Agent encountered error and stopped"
             print_summary "$worktree_path" "$task_dir" "$session_id" "error"
             exit 1
-        fi
-
-        if grep -qF "$TASK_ITEM_DONE" "$log_file"; then
+        elif printf '%s' "$final_result" | grep -qF "$TASK_ITEM_DONE"; then
             log_success "Task item completed. Continuing to next..."
             log_progress "$worktree_path" "$task_dir" "$session_id" "item_complete" "Task item completed in iteration $i"
         else

@@ -162,7 +162,7 @@ const TEST_GATE = `## Test gate (scope it to THIS task — do NOT blindly run th
   - Always: typecheck/compile or \`build\` (catches the same breakage a full unit run would, faster).
   - Logic change: run only IMPACTED tests — \`vitest related <changed-files>\` / \`vitest --changed\`, or the specific spec file(s) / Playwright spec. Never run the whole suite for one task.
   - Presentation/markup/config-only change (no business logic): build/typecheck + confirm any load-bearing selectors (\`data-testid\`, ids, form names) are preserved (grep them). Skip the full unit suite.
-- The full suite runs in exactly two places: the baseline (first task) and final validation. Not per task.
+- The full suite runs in exactly ONE place: final validation, after every task is implemented. Never per task and never as a startup baseline.
 - If a suite is gated on an external prerequisite that is currently down (e.g. a blocked network host, no DB), say so and do not count its pre-existing failures as yours. Do not escalate (no sudo) to chase env flakiness.
 - **Backend (mocha) gates:** always pass \`--exit --timeout 0\` (or use the \`backend/package.json\` npm scripts, which all carry \`--exit\`). Bare \`npx mocha <file>\` HANGS after tests pass because the MSSQL pool keeps the event loop alive — a hang, not a failure.
 - **Hard time wall — never grind on a slow gate.** Backend tests are fast: a single file and the full parallel suite both finish in ~1-2 min. Wrap EVERY backend gate in \`timeout 180\` (\`timeout 180 npx mocha --exit --timeout 0 <file>\`, \`timeout 180 npm test\`). If a gate hits its wall, it is a hang/env problem (VPN/DB down or a missing \`--exit\`), NOT a code bug: kill it (\`pkill -f mocha\`), check the DB socket (\`timeout 5 bash -c 'exec 3<>/dev/tcp/172.23.7.5/1433' && echo up || echo DOWN\`), and if it's env, report status FAILURE with issues explaining the blocker — do not keep re-running a hanging command.
@@ -326,12 +326,9 @@ function discoveryNote(discoveries) {
     : ''
 }
 
-function implementerPrompt(t, isFirst, hasParallelSiblings, discoveries) {
+function implementerPrompt(t, hasParallelSiblings, discoveries) {
   const parallelNote = hasParallelSiblings
     ? '\n- Other tasks are running IN PARALLEL in this same working tree. Touch ONLY the files listed for this task. Never edit, revert, or "clean up" other files, and ignore unrelated concurrent changes you notice in git status.'
-    : ''
-  const baselineNote = isFirst
-    ? '\n- This is the FIRST task of the run: before changing anything, run the full test suite once to record the baseline. Note pre-existing failures; never count them as yours.'
     : ''
   const rerunNote = forceRerun.has(t.id)
     ? `\n- RE-RUN (env blocker resolved). ${typeof _args.rerunNote === 'string' ? _args.rerunNote : 'A previous attempt failed on a now-resolved environmental blocker. Perform the work and verify the deliverable exists before reporting SUCCESS.'}`
@@ -345,7 +342,7 @@ ${advisoryNote(t.id)}${discoveryNote(discoveries)}
 ## Context
 - Read the full plan file FIRST — it defines your task (the \`### ${t.id}:\` section) and the overall context.
 - Read CLAUDE.md to discover the test runner and project conventions.
-- Implement the task: write code, write tests.${parallelNote}${baselineNote}${rerunNote}
+- Implement the task: write code, write tests.${parallelNote}${rerunNote}
 
 ${GAP_FILL}
 
@@ -381,7 +378,7 @@ function validationPrompt(validationCommands) {
 
 ${cmds}
 
-This is the ONE full-suite run after baseline. Wrap backend mocha in \`timeout 180\` with \`--exit --timeout 0\`. Run every command in the FOREGROUND — never \`run_in_background\` (ending your turn while waiting on a background command kills the task without a report). Skip suites whose external prerequisite is confirmed down and note them; report pre-existing env failures separately from genuine regressions.
+This is the ONLY full-suite run of the entire pipeline — no baseline was recorded, so a failure in code no task touched may be pre-existing: check git history / the base branch before counting it as a regression. Wrap backend mocha in \`timeout 180\` with \`--exit --timeout 0\`. Run every command in the FOREGROUND — never \`run_in_background\` (ending your turn while waiting on a background command kills the task without a report). Skip suites whose external prerequisite is confirmed down and note them; report pre-existing env failures separately from genuine regressions.
 
 Gates beyond the commands:
 - **Skipped ≠ pass.** A test that covers a plan acceptance criterion but is SKIPPED or not run (missing fixture, env var, login state) is a FAILURE of that criterion, not a pass — name the criterion in issues. A green suite that never executed the acceptance test proves nothing.
@@ -692,7 +689,6 @@ try {
 
 const results = {}
 let execFailed = false
-let first = true
 // Reusable facts tasks dig up (DB schema, naming conventions, helpers) — carried
 // forward wave to wave so later tasks read them instead of re-deriving them. Tasks
 // in the same parallel batch each see the snapshot as of batch start (they can't see
@@ -700,9 +696,7 @@ let first = true
 const discoveries = []
 
 async function runTask(t, hasParallelSiblings) {
-  const isFirst = first
-  first = false
-  const attempt = await agent(implementerPrompt(t, isFirst, hasParallelSiblings, discoveries), { label: `${t.id}: ${t.title}`, model: 'sonnet', phase: 'Execute', schema: AGENT_RESULT })
+  const attempt = await agent(implementerPrompt(t, hasParallelSiblings, discoveries), { label: `${t.id}: ${t.title}`, model: 'sonnet', phase: 'Execute', schema: AGENT_RESULT })
   if (attempt?.status === 'SUCCESS') {
     if (Array.isArray(attempt.discoveries)) discoveries.push(...attempt.discoveries)
     return { ...attempt, retried: false }

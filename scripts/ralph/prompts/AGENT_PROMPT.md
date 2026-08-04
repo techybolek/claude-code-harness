@@ -38,15 +38,12 @@ Read the progress file (`.runs/TASK_DIR/ralph_progress.txt`) to understand:
 - Any errors or blockers encountered
 - Current task state
 
-### 3. Baseline Tests
-Establish the test baseline using the project's own runner — check `package.json`
-scripts, `Makefile`, `pyproject.toml` (e.g. `npm test`, `npx mocha`, `pytest`),
-plus the project's linter if configured.
-
-- **First iteration** (no green baseline recorded in `ralph_progress.txt`): run the
-  full suite and record the result.
-- **Later iterations**: trust the previous iteration's recorded `regression_passed`
-  entry as the baseline — do NOT re-run the full suite at startup.
+### 3. Test Runner Discovery
+Identify the project's own runner — check `package.json` scripts, `Makefile`,
+`pyproject.toml` (e.g. `npm test`, `npx mocha`, `pytest`), plus the project's
+linter if configured. Do NOT run the full suite at startup — not on any
+iteration. The full suite runs exactly ONCE per task, right before
+`ALL_TASKS_DONE`; until then only impacted tests run (Phase 4).
 
 ### 4. Task Documentation
 Read ALL three files in the active task folder:
@@ -146,8 +143,8 @@ What user/system outcome does this achieve?
 
 1. Run new tests - they should PASS (green)
 2. Run the **Regression Scope declared in Phase 1** - impacted tests only, not the
-   full suite. The full suite runs exactly twice per task: first-iteration baseline
-   and once before `ALL_TASKS_DONE`.
+   full suite. The full suite runs exactly ONCE per task, right before
+   `ALL_TASKS_DONE`.
 3. **If any test fails -> ANALYZE and FIX immediately:**
    - Read the test output carefully
    - Identify the root cause
@@ -200,8 +197,10 @@ After completing ALL selected tasks, output ONE marker:
 
 ### All tasks in tasks.md are complete (all `[x]`):
 
-Before outputting this marker, run the FULL test suite once (the second and final
-full run), then write `.runs/TASK_DIR/SUMMARY.md`:
+Before outputting this marker, run the FULL test suite once — the ONLY full run
+of the entire task. A failure in code no iteration touched may be pre-existing:
+check `git log` / the base branch before counting it as yours. Then write
+`.runs/TASK_DIR/SUMMARY.md`:
 
 ```markdown
 # Ralph Summary — TASK_DIR
@@ -361,7 +360,7 @@ TEST FAILS -> ANALYZE -> FIX -> RE-TEST -> (repeat until green)
    - `pwd` -> Confirm worktree: `worktrees/ralph-worktree-<name>/`
    - `git branch` -> Confirm: `ralph/<task-name>`
    - Read `.runs/<task-name>/ralph_progress.txt`, task docs
-   - Run baseline tests -> Record: "15 tests passing"
+   - Identify test runner (`npm test`) — no full-suite run at startup
 
 2. **Select:**
    - Review all `[ ]` items
@@ -384,7 +383,7 @@ TEST FAILS -> ANALYZE -> FIX -> RE-TEST -> (repeat until green)
 
 6. **Verify:**
    - New tests: PASS
-   - Regression: "15 + 3 = 18 tests passing"
+   - Regression: impacted specs pass (full suite deferred to `ALL_TASKS_DONE`)
 
 7. **Document:**
    - tasks.md: Mark items `[x]`

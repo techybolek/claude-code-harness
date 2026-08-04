@@ -134,7 +134,6 @@ git branch -D ralph/0001-<task-name>
 - Verify worktree location (`worktrees/0001-<name>/`)
 - Confirm on feature branch (`ralph/0001-<task-name>`)
 - Read progress file and task docs
-- Run baseline tests
 
 ### 2. Task Selection
 - Review all incomplete `[ ]` items

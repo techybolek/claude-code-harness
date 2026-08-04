@@ -91,7 +91,7 @@ function validationPrompt(cmds0) {
 
 ${cmds}
 
-${changedFiles.length ? 'This re-verify pass is DELTA-SCOPED — see the Delta scope section below.' : 'This is the ONE full-suite run after baseline.'} Wrap backend mocha in \`timeout 180\` with \`--exit --timeout 0\`. Run every command in the FOREGROUND — never \`run_in_background\` (ending your turn while waiting on a background command kills the task without a report). Skip suites whose external prerequisite is confirmed down and note them; report pre-existing env failures separately from genuine regressions.
+${changedFiles.length ? 'This re-verify pass is DELTA-SCOPED — see the Delta scope section below.' : 'This is the ONLY full-suite run of the entire pipeline — no baseline was recorded, so a failure in code no task touched may be pre-existing: check git history / the base branch before counting it as a regression.'} Wrap backend mocha in \`timeout 180\` with \`--exit --timeout 0\`. Run every command in the FOREGROUND — never \`run_in_background\` (ending your turn while waiting on a background command kills the task without a report). Skip suites whose external prerequisite is confirmed down and note them; report pre-existing env failures separately from genuine regressions.
 
 Gates beyond the commands:
 - **Skipped ≠ pass.** A test that covers a plan acceptance criterion but is SKIPPED or not run (missing fixture, env var, login state) is a FAILURE of that criterion, not a pass — name the criterion in issues. A green suite that never executed the acceptance test proves nothing.
