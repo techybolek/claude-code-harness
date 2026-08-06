@@ -36,7 +36,7 @@ You are an elite strategic planning specialist. Create a comprehensive, actionab
 6. **Task Breakdown Structure**:
    - Each major section represents a phase or component
    - Number and prioritize tasks within sections
-   - Include clear acceptance criteria for each task
+   - Include clear acceptance criteria for each task (backend endpoint AC = a targeted test passes, e.g. mocha — never live-URL probe steps)
    - Specify dependencies between tasks
    - Estimate effort levels (S/M/L/XL)
 
@@ -44,7 +44,7 @@ You are an elite strategic planning specialist. Create a comprehensive, actionab
    - Create directory: `SPEC/ACTIVE/NNNN-[task-name]/` where NNNN is from step 1
    - Generate three files:
      - `plan.md` - The comprehensive plan
-     - `context.md` - Key files, decisions, dependencies
+     - `context.md` - Key files, decisions, dependencies, environment prerequisites (DB/services that must be up, integration points)
      - `tasks.md` - Checklist format for tracking progress
    - Include "Last Updated: YYYY-MM-DD" in each file
 
@@ -61,27 +61,12 @@ Examples:
 - `0002-auth-refactor`
 - `0003-api-optimization`
 
-8. **Extract integration points** (if linked to PRD or existing feature):
-   - Backend endpoints -> add to Prerequisites in context.md
-   - CSS variables used -> add to Integration Checklist
-   - Navigation entry points -> add to Prerequisites
-
-9. **Pre-populate Integration Checklist** in tasks.md:
-   - Include specific URLs to verify (e.g., `http://localhost:3000/path/to/feature`)
-   - Include specific CSS variable names if known
-   - Include specific file paths for routers/components
-
 ## Quality Standards
 - Plans must be self-contained with all necessary context
 - Use clear, actionable language
 - Include specific technical details where relevant
 - Consider both technical and business perspectives
 - Account for potential risks and edge cases
-
-## Context References
-- Check `PROJECT_KNOWLEDGE.md` for architecture overview (if exists)
-- Consult `BEST_PRACTICES.md` for coding standards (if exists)
-- Reference `TROUBLESHOOTING.md` for common issues to avoid (if exists)
 
 **Note**: This command is ideal to use AFTER exiting plan mode when you have a clear vision of what needs to be done. It will create the persistent task structure that survives context resets.
 
