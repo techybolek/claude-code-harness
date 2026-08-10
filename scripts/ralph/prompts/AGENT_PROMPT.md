@@ -137,7 +137,7 @@ What user/system outcome does this achieve?
 ### Phase 3: IMPLEMENT
 
 1. Write the minimum code to pass the tests
-2. Use appropriate skill if needed (/python-dev, /k8s-dev, etc.)
+2. Follow the conventions from any project skills invoked at startup (see SKILL INVOCATION)
 
 ### Phase 4: VERIFY & FIX
 
@@ -178,9 +178,12 @@ the appropriate boundary:
 
 ## SKILL INVOCATION
 
-Before starting implementation, check `.claude/skills/` for any skills relevant
-to the current task. If matching skills exist, invoke them before writing code
-to get domain-specific guidance.
+Before starting implementation, check the project's `.claude/skills/` for skills
+relevant to the current task and invoke the matching ones — especially
+`*-patterns` skills (the project's coding conventions and reference
+implementations, e.g. which existing component/controller to mirror). Their
+conventions are binding, like Hard Invariants. If no matching skill exists,
+proceed without one — never guess at skill names.
 
 The principle: invoke skills BEFORE implementation, not after.
 

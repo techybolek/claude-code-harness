@@ -141,6 +141,14 @@ build_prompt() {
     local task_path="SPEC/ACTIVE/${task_dir}"
     local progress_file=".runs/${task_dir}/ralph_progress.txt"
 
+    # Provisioning warnings from worktree-setup.sh health_check — may be stale
+    # by later iterations (the agent may have run npm ci), hence "verify first".
+    local health_section=""
+    local health_file="${worktree_path}/.runs/worktree-health.txt"
+    if [ -s "$health_file" ]; then
+        health_section=$(printf 'Worktree provisioning warnings (verify each is still current, then fix before any test/build):\n%s\n\n' "$(cat "$health_file")")
+    fi
+
     # Create prompt with context files
     cat <<PROMPT
 @CLAUDE.md
@@ -151,7 +159,7 @@ Task: ${task_dir}
 Worktree Path: ${worktree_path}
 Progress File: ${progress_file}
 
-${prompt_template}
+${health_section}${prompt_template}
 PROMPT
 }
 

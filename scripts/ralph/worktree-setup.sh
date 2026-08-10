@@ -98,7 +98,38 @@ setup_worktree_local_state() {
     fi
 }
 
+# Post-provision health check — fresh worktrees have repeatedly started broken
+# (0001: `Cannot find module 'chai'` ×4 because mocha ran before npm ci; 0002
+# session 1 had to rediscover `npm ci --legacy-peer-deps`). Findings go to
+# stderr for the human AND to .runs/worktree-health.txt so the agent prompt can
+# carry them (ralph.sh includes the file when non-empty).
+health_check() {
+    local report="$WORKTREE_PATH/.runs/worktree-health.txt"
+    mkdir -p "$WORKTREE_PATH/.runs"
+    : > "$report"
+
+    # Every package.json (outside node_modules) without a sibling node_modules
+    # means tests/builds in that dir will fail until npm ci runs there.
+    while IFS= read -r pkg; do
+        local dir rel
+        dir=$(dirname "$pkg")
+        rel="${dir#$WORKTREE_PATH}"; rel="${rel#/}"; [ -z "$rel" ] && rel="."
+        if [ ! -e "$dir/node_modules" ]; then
+            echo "MISSING node_modules in '$rel' — run npm ci there before any test/build (a peer-dep conflict may require the project's documented flags, e.g. --legacy-peer-deps)" >> "$report"
+        fi
+    done < <(find "$WORKTREE_PATH" -maxdepth 3 -name package.json -not -path '*/node_modules/*' 2>/dev/null)
+
+    if [ -s "$report" ]; then
+        log_error "Worktree health check warnings:"
+        sed 's/^/  /' "$report" >&2
+    else
+        rm -f "$report"
+        log_info "Worktree health check passed"
+    fi
+}
+
 create_worktree
 setup_worktree_local_state
+health_check
 
 echo "$WORKTREE_PATH"
