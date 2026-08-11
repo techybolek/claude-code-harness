@@ -1,6 +1,13 @@
 # Chore Planning
 
-Create a plan in `SPEC/PLAN/*.md` to accomplish the chore described below.
+Create a plan to accomplish the chore described below.
+
+## Output Location
+
+1. From the project root, run `~/.claude/scripts/next-task-number.sh` — it prints a zero-padded `NNNN`, allocated across `SPEC/ACTIVE/` and `SPEC/ARCHIVE/`.
+2. Write the plan to `SPEC/ACTIVE/NNNN-<short-kebab-name>/plan.md`.
+
+Same task-dir convention as `/ralph:strategic-plan`, so both harnesses share one inbox and one numbering sequence. Archive finished work with `git mv SPEC/ACTIVE/<task-dir> SPEC/ARCHIVE/`.
 
 ## Instructions
 

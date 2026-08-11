@@ -241,8 +241,8 @@ print_summary() {
         echo "    ~/.claude/scripts/ralph/ralph.sh --cleanup"
     fi
     if [ "$final_status" = "complete" ]; then
-        echo "    git mv SPEC/ACTIVE/$task_dir SPEC/OLD/   # archive after merge —"
-        echo "                                             # specs left in ACTIVE make later runs ambiguous"
+        echo "    git mv SPEC/ACTIVE/$task_dir SPEC/ARCHIVE/   # archive after merge —"
+        echo "                                                 # specs left in ACTIVE make later runs ambiguous"
     fi
     if [ "$final_status" = "error" ]; then
         echo "  Logs: cat $progress_file"

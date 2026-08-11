@@ -12,7 +12,7 @@ $ARGUMENTS
 
 `$ARGUMENTS` takes up to two file paths: `<plan> [spec]`.
 
-- **Plan** (first path, required): the plan to review — `SPEC/PLAN/*.md`, or any `.md` with a `## Tasks` section.
+- **Plan** (first path, required): the plan to review — `SPEC/ACTIVE/NNNN-*/plan.md` (or the legacy `SPEC/PLAN/*.md`), or any `.md` with a `## Tasks` section.
 - **Spec** (second path, optional): the source intent — `SPEC/FEATURE-REQUEST/`, `SPEC/REQUIREMENTS/`, or `SPEC/BUG-REPORT/*.md`. Used to **determine resolutions** for contradictions (it's the tie-breaker on intent).
 
 ## Protocol

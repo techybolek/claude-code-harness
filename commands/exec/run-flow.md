@@ -15,7 +15,7 @@ $ARGUMENTS
 
 ### Step 1: Resolve Input
 
-1. If `$ARGUMENTS` is a plan file (path contains `SPEC/PLAN/` or ends in `.md` with a `## Tasks` section): `inputType = "plan"`.
+1. If `$ARGUMENTS` is a plan file (path contains `SPEC/ACTIVE/` or the legacy `SPEC/PLAN/`, or ends in `.md` with a `## Tasks` section): `inputType = "plan"`.
 2. If `$ARGUMENTS` is a spec file (path contains `SPEC/REQUIREMENTS/`, `SPEC/FEATURE-REQUEST/`, `SPEC/BUG-REPORT/`, or `SPEC/TECHNICAL/`): `inputType = "spec"`.
 3. If the file doesn't exist, **STOP**: "File not found: {path}"
 

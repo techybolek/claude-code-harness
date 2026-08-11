@@ -50,7 +50,7 @@ permissions that allow agents to write to the worktree — e.g. a
 
 5. **Final report.** Branch `ralph/<task-dir>`, commits made, review verdict,
    and next steps: review + merge the branch, then `ralph.sh --cleanup` and
-   `git mv SPEC/ACTIVE/<task-dir> SPEC/OLD/`.
+   `git mv SPEC/ACTIVE/<task-dir> SPEC/ARCHIVE/`.
 
 ## Notes
 

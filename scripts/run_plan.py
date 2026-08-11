@@ -1,9 +1,9 @@
 """Plan execution utility.
 
 Usage:
-    python scripts/run_plan.py SPEC/PLAN/<plan>.md
+    python scripts/run_plan.py SPEC/ACTIVE/<NNNN-name>/plan.md
 
-Reads a SPEC/PLAN/*.md task list and runs each task in a fresh `claude -p`
+Reads a plan's task list and runs each task in a fresh `claude -p`
 subprocess, in dependency order. State and per-task logs persist under
 `.exec/<plan-slug>/` so runs are resumable after a crash, kill, or failure.
 See SPEC/FEATURE-REQUEST/plan-execution-utility-2026-05-10.md for the spec.
@@ -470,7 +470,7 @@ def _print_summary(state: dict, order: list[str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Execute a SPEC/PLAN/*.md task list.")
+    parser = argparse.ArgumentParser(description="Execute a plan file's task list.")
     parser.add_argument("plan_path", help="Path to the plan markdown file.")
     args = parser.parse_args(argv)
 

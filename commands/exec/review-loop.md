@@ -14,7 +14,7 @@ $ARGUMENTS
 
 `$ARGUMENTS` is optional and takes up to two file paths: `<plan> [spec]`.
 
-- **Plan** (first path): the implementation contract — `SPEC/PLAN/*.md`, or any `.md` with a `## Tasks` section. Defines this diff's scope and its per-task "Done when" gates.
+- **Plan** (first path): the implementation contract — `SPEC/ACTIVE/NNNN-*/plan.md` (or the legacy `SPEC/PLAN/*.md`), or any `.md` with a `## Tasks` section. Defines this diff's scope and its per-task "Done when" gates.
 - **Spec** (second path): the source intent — `SPEC/FEATURE-REQUEST/`, `SPEC/REQUIREMENTS/`, or `SPEC/BUG-REPORT/*.md`. Used for intent-drift and out-of-scope checks only.
 
 Either may be omitted. With neither, review the uncommitted changes on their own merits.

@@ -16,7 +16,7 @@ Execute these steps in order. Do not skip steps.
 
 ### Step 1: Resolve Input
 
-1. If `$ARGUMENTS` is a plan file (path contains `SPEC/PLAN/` or ends in `.md` with a `## Tasks` section): use it directly as the plan.
+1. If `$ARGUMENTS` is a plan file (path contains `SPEC/ACTIVE/` or the legacy `SPEC/PLAN/`, or ends in `.md` with a `## Tasks` section): use it directly as the plan.
 2. If `$ARGUMENTS` is a spec file (path contains `SPEC/REQUIREMENTS/` or `SPEC/FEATURE-REQUEST/` or `SPEC/BUG-REPORT/`): classify and plan it first (see Step 1a).
 3. If the file doesn't exist, **STOP**: "File not found: {path}"
 

@@ -95,7 +95,8 @@ Task selection follows the same rule as the pipeline: explicit `--task`/
 `RALPH_TASK` wins; otherwise exactly one `NNNN-` dir must be in `SPEC/ACTIVE/`.
 The positional argument is ONLY the iteration count — a non-numeric value is
 rejected with a hint, not silently ignored. After a `complete` run the summary
-reminds you to `git mv` the spec to `SPEC/OLD/` so later runs stay unambiguous.
+reminds you to `git mv` the spec to `SPEC/ARCHIVE/` so later runs stay
+unambiguous — and so `next-task-number.sh` still sees its NNNN as taken.
 
 Each iteration launches a fresh `claude -p` session in the worktree with
 `prompts/AGENT_PROMPT.md` + the task files, and ends with a marker:
