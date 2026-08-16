@@ -52,8 +52,9 @@ where `{scratchpad}/codex-prompt.md` is written first (stdin via `-` avoids shel
 Read `{scratchpad}/codex-review.md` when it finishes. **Availability-tolerant:** if `codex` is missing, errors, or hasn't finished within ~10 minutes of the three Agent panelists completing, kill it and proceed with the 3-panel merge — never block the pipeline on the external CLI; record `codex: unavailable` in the report.
 
 **Merge the reports yourself (no subagent):**
-- **VERDICT:** NEEDS_WORK if any panelist reports a blocking finding; PASS only if all available panelists PASS.
+- **VERDICT:** NEEDS_WORK if any panelist reports a blocking finding; PASS only if all available panelists PASS. Plan deviations alone never make the verdict NEEDS_WORK.
 - **Blocking:** union of the lists. Where two panelists describe the same defect, keep one entry (note the overlap — independent detection is signal, not noise).
+- **Plan deviations:** union across panelists (dedupe like blocking); escalated per review-loop.md — never passed to the fixer.
 - **Nits:** union.
 - **Codex findings get the same treatment as any panelist's, including orchestrator verification before the fixer is dispatched — its findings are usually real but its suggested remediations are not gospel; pass the verified defect to the fixer, not Codex's patch.**
 
@@ -73,6 +74,7 @@ Print `review-loop.md`'s **Step 3** report format, with one extra line:
 
 ```
 - **Panel:** correctness: {N blocking}/{M nits} · resilience: {N}/{M} · tests: {N}/{M} · codex: {N}/{M} (or "unavailable")
+- **Plan deviations (human decision required):** {merged list, or "None"}
 ```
 
 ## Rules

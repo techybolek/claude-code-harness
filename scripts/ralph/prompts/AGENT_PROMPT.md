@@ -58,6 +58,15 @@ fix or mid-course correction the plan didn't anticipate) requires re-verifying
 the invariant still holds before marking the item done, and recording how it was
 verified in context.md.
 
+If invariants turn out to be MUTUALLY UNSATISFIABLE for a required behavior (or
+an invariant conflicts with another plan clause), never silently pick a side:
+record the contradiction explicitly in context.md AND SUMMARY.md as a line
+starting `PLAN CONTRADICTION:` — naming both clauses, the behavior that forces
+the conflict, and the resolution you chose — and implement the resolution that
+best preserves the invariants' intent (the source spec's intent is the
+tiebreaker). The review pipeline escalates recorded contradictions for human
+ruling instead of "fixing" your resolution away.
+
 ---
 
 ## TASK SELECTION: SMART BATCHING

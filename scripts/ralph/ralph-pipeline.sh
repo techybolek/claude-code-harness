@@ -25,7 +25,8 @@
 #   REVIEW_MODEL=claude-...                             # review session model
 #
 # Exit codes: 0 = implemented + reviewed, 2 = ralph hit max iterations (no
-# review run — rerun to continue), 1 = error.
+# review run — rerun to continue), 3 = reviewed but plan deviations escalated
+# (human ruling required; normal fixes still committed), 1 = error.
 
 set -uo pipefail
 
@@ -150,12 +151,23 @@ if [ -z "$BASE_REF" ]; then
     log_warn "merge-base main..HEAD failed in worktree — review falls back to uncommitted changes only"
 fi
 
-REVIEW_ARGS=$(python3 - "$PLAN_PATH" "$SKIP_VALIDATION" "$BASE_REF" "${VALIDATION_COMMANDS[@]+"${VALIDATION_COMMANDS[@]}"}" <<'EOF'
+# Source spec (intent authority above the plan): derived from plan.md's
+# "**Source spec:**" header so the triage gate can adjudicate plan-vs-code
+# conflicts up the hierarchy (spec intent > plan letter). Absent → omit.
+SPEC_PATH=$(sed -n 's/^\*\*Source spec:\*\*[[:space:]]*`\{0,1\}\([^`]*\)`\{0,1\}.*$/\1/p' "$WORKTREE_PATH/$PLAN_PATH" | head -1 | sed 's/[[:space:]]*$//')
+if [ -n "$SPEC_PATH" ] && [ ! -f "$WORKTREE_PATH/$SPEC_PATH" ]; then
+    log_warn "Source spec named in plan.md not found in worktree: $SPEC_PATH — reviewing without spec"
+    SPEC_PATH=""
+fi
+
+REVIEW_ARGS=$(python3 - "$PLAN_PATH" "$SKIP_VALIDATION" "$BASE_REF" "$SPEC_PATH" "${VALIDATION_COMMANDS[@]+"${VALIDATION_COMMANDS[@]}"}" <<'EOF'
 import json, sys
-plan, skip, base, cmds = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
+plan, skip, base, spec, cmds = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
 args = {"planPath": plan}
 if base:
     args["baseRef"] = base
+if spec:
+    args["specPath"] = spec
 if skip == "1":
     args["skipValidation"] = True
 elif cmds:
@@ -176,19 +188,15 @@ log_info "Args: $REVIEW_ARGS"
 # an incomplete run detectable: no REVIEW_VERDICT line → treat as killed.
 REVIEW_CONTRACT='This is a headless -p run: your final message ends the CLI process and kills any still-running background workflow. After launching the review workflow, never end a turn by promising future results ("running in the background", "I will let you know") — wait for the workflow completion notification instead. Your final message MUST begin with the line "REVIEW_VERDICT:" followed by the workflow'"'"'s returned JSON verbatim.'
 
-# Snapshot pre-review tracked dirt so stage 4 commits ONLY what the fixer
-# changed (same incident: pre-existing ralph_progress.txt edits were committed
-# as "fix(review)" after the workflow died having fixed nothing).
-PRE_DIRTY_FILE=$(mktemp)
-git -C "$WORKTREE_PATH" status --porcelain --untracked-files=no | awk '{print substr($0,4)}' | sort > "$PRE_DIRTY_FILE"
-
 review_rc=0
 pushd "$WORKTREE_PATH" > /dev/null
 # The panel+triage+fixer workflow runs well past claude -p's default 10-minute
 # background-wait ceiling (v2.1.182+), which kills the workflow mid-run and was
-# the actual cause of the two 2026-08-16 mid-fix deaths. 0 = wait indefinitely;
-# we cap at 60 min so a genuinely hung run still dies.
-CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${REVIEW_WAIT_CEILING_MS:-3600000}" \
+# the actual cause of the two 2026-08-16 mid-fix deaths. A 60-min cap then killed
+# a third run at 10:58 that was legitimately still fixing (triage of ~25 findings
+# + a 19-file fix round takes >1h). The workflow itself is bounded (max 4 fix
+# rounds, codex timeouts), so 0 = wait indefinitely is safe and is the default.
+CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${REVIEW_WAIT_CEILING_MS:-0}" \
 claude --dangerously-skip-permissions \
     --model "${REVIEW_MODEL:-claude-sonnet-5}" \
     --verbose \
@@ -205,24 +213,25 @@ fi
 FINAL_MSG=$(grep '"type":"result"' "$REVIEW_LOG" | tail -1 | jq -r '.result // ""' 2>/dev/null)
 if ! printf '%s' "$FINAL_MSG" | grep -q 'REVIEW_VERDICT:'; then
     log_error "Review session ended without a REVIEW_VERDICT line — the workflow was likely killed mid-run; NOT committing anything. See $REVIEW_LOG"
-    rm -f "$PRE_DIRTY_FILE"
     exit 1
 fi
 
-# ---- Stage 4: commit fixer output ------------------------------------------
-# Tracked modifications only (git add -u): the worktree also holds untracked
-# non-fixer files — .runs/ logs, env copies, hook-placed artifacts — that a
-# blanket add -A would commit. New files the fixer created are listed below
-# for a manual decision instead.
+# ---- Stage 4: commit the reviewed state --------------------------------------
+# The REVIEW_VERDICT gate above proves the workflow ran to completion, and the
+# panel reviewed the WHOLE diff vs baseRef — tracked and untracked alike. Commit
+# exactly that reviewed state (everything except .runs/ logs) so the branch tip
+# equals what the panel judged. The old tracked-mods-only + pre-dirt-snapshot
+# policy withheld reviewed content: it excluded fixer-created files (ed01b99
+# shipped an import of an uncommitted util) and excluded a previous killed
+# attempt's fixer edits that the rerun's panel had re-reviewed. Real env copies
+# are gitignored and never reach git status; .runs/ is excluded by path.
 pushd "$WORKTREE_PATH" > /dev/null
-NEW_PATHS=$(git status --porcelain --untracked-files=no | awk '{print substr($0,4)}' | sort | comm -13 "$PRE_DIRTY_FILE" -)
-rm -f "$PRE_DIRTY_FILE"
-if [ -n "$NEW_PATHS" ]; then
-    printf '%s\n' "$NEW_PATHS" | xargs -d '\n' git add --
+git add -A -- ':!.runs'
+if ! git diff --cached --quiet; then
     git commit -m "fix(review): apply review-flow-only panel findings" --quiet
-    log_success "Committed fixer changes: $(git log -1 --format=%h)"
+    log_success "Committed reviewed state: $(git log -1 --format=%h)"
 else
-    log_info "Review made no new tracked changes (nothing to commit; pre-existing dirt left alone)"
+    log_info "Worktree already matches the reviewed state (nothing to commit)"
 fi
 UNTRACKED=$(git status --porcelain | grep '^??' | grep -v '^?? \.runs/' || true)
 popd > /dev/null
@@ -260,8 +269,39 @@ if [ -n "$UNTRACKED" ]; then
     log_warn "Untracked files left in worktree (NOT committed — review manually):"
     echo "$UNTRACKED"
 fi
+
+# Plan deviations: triage-escalated plan-vs-code conflicts the pipeline is NOT
+# allowed to auto-fix — they require a human ruling (amend the spec/plan, or
+# accept the plan's letter and rerun). Non-empty → exit 3.
+DEVIATIONS=$(printf '%s' "$FINAL_MSG" | python3 -c '
+import json, sys
+txt = sys.stdin.read()
+i = txt.find("REVIEW_VERDICT:")
+obj = None
+if i >= 0:
+    payload = txt[i + len("REVIEW_VERDICT:"):]
+    dec = json.JSONDecoder()
+    for j, ch in enumerate(payload):
+        if ch == "{":
+            try:
+                obj, _ = dec.raw_decode(payload[j:])
+                break
+            except Exception:
+                continue
+for d in (obj or {}).get("planDeviations") or []:
+    print(f"  - {d}")
+')
+PIPELINE_RC=0
+if [ -n "$DEVIATIONS" ]; then
+    echo ""
+    log_warn "⚠ Plan deviations — human decision required (escalated, NOT auto-fixed):"
+    printf '%s\n' "$DEVIATIONS"
+    log_warn "Rule: amend the spec/plan (sanctioned lever) or accept the plan's letter, then rerun --skip-ralph."
+    PIPELINE_RC=3
+fi
 echo ""
 echo "  Next steps:"
 echo "    git -C $PROJECT_ROOT log main..ralph/$TASK_DIR"
 echo "    review, then merge and: ~/.claude/scripts/ralph/ralph.sh --cleanup"
 echo ""
+exit $PIPELINE_RC

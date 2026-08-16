@@ -107,6 +107,7 @@ const TRIAGE_OUT = {
   properties: {
     confirmed: { type: 'array', items: { type: 'string' } },
     rejected: { type: 'array', items: { type: 'string' } },
+    planDeviations: { type: 'array', items: { type: 'string' } },
   },
 }
 
@@ -390,7 +391,10 @@ Return structured output: status SUCCESS only if there are no genuine regression
 // Lens keys must match the table in review-panel.md — definitions live there only.
 const CODE_LENSES = ['correctness', 'resilience', 'tests']
 
-function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = []) {
+function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = [], deviations = []) {
+  const deviationsNote = deviations.length
+    ? `\n## Plan deviations already ESCALATED for human decision — append this block verbatim to codex's prompt\nThese plan-vs-code conflicts are already escalated for human ruling. Do NOT re-report them, as blocking or otherwise.\n${deviations.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
+    : ''
   // applied (prior fix rounds) + disputed (triage-gate rejections) close the fix-loop
   // blind spot from the 2026-07-25 postmortem: r1 found the missing Edit-button wiring,
   // the fixer wired the WRONG component (tsc-verified), and r2 — reviewing the diff
@@ -408,12 +412,12 @@ function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = []) {
   return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex code panelists' : 'the cross-model Codex code re-reviewer'} (wrapper contract: ~/.claude/commands/exec/review-panel.md, "The Codex panelist" section). You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
 1. Read ~/.claude/commands/exec/review-panel.md and ~/.claude/commands/exec/review-loop.md in full.
-2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions). ${role} Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
+2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath}${specPath ? ` and {spec-file-path} = ${specPath}` : ' and no spec (omit spec-specific instructions)'}. ${role} Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
 3. ${codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`)}
-${appliedNote}${disputedNote}
+${appliedNote}${disputedNote}${deviationsNote}
 Structured output:
 - verdict: PASS | NEEDS_WORK | UNAVAILABLE
-- blocking: list of strings, one per blocking finding from codex's report — "file:line — what's wrong — the input/scenario that triggers it — expected fix"
+- blocking: list of strings, one per blocking finding from codex's report — "file:line — what's wrong — the input/scenario that triggers it — expected fix". Findings codex reports under "Plan deviations" (or labels PLAN-DEVIATION) go in this list too, verbatim with the PLAN-DEVIATION label kept, and count toward a NEEDS_WORK verdict — the triage gate is the adjudicator that escalates them for human decision.
 - nits: list of strings`
 }
 
@@ -430,12 +434,14 @@ For EACH finding, read the current code at its location — plus enough surround
 - **STALE**: the claimed defect is not present in the current code (already fixed, or the reviewer misread) — cite file:line evidence.
 - **UNREALISTIC**: technically constructible but the scenario requires inputs the UI cannot produce, concurrency the deployment does not exhibit, or data magnitudes outside the domain's real ranges — or it mandates rigor machinery (locks, concurrency proofs, fault injection, precision handling) the spec/plan never asked for. One-line rationale grounded in the spec/plan or the code.
 - **DUPLICATE**: same defect as another finding — confirm one, mark the rest duplicates of it.
+- **PLAN_DEVIATION**: the finding's substance is plan non-conformance (a missed mechanism prescription, a Hard Invariant's letter, an enumerated list) but the code is behaviorally defensible — because fixing toward the plan's letter would violate another plan clause/invariant, contradict the spec's intent, or degrade real behavior; because the plan's clauses are mutually unsatisfiable on this point (the spec's intent is the tiebreaker for which side the code may keep); or because the deviation is documented (e.g. context.md) and sound on its own merits. Authority hierarchy: spec (intent) > plan (Done-when, invariants) > mechanism prescriptions. NOT a plan deviation: code failing a Done-when because it is genuinely broken or incomplete — that is CONFIRMED. These are escalated for HUMAN decision, never auto-fixed.
 
-Judge severity, never difficulty: a hard-to-fix real defect is CONFIRMED. When genuinely uncertain whether a defect is real, CONFIRM it — the fixer's own verification is the next check; this gate exists to kill clear noise, not to shave real work. You are read-only: modify no files, no git commits.
+Judge severity, never difficulty: a hard-to-fix real defect is CONFIRMED. When genuinely uncertain whether a defect is real, CONFIRM it — the fixer's own verification is the next check; this gate exists to kill clear noise, not to shave real work. Likewise, when uncertain whether something is a genuine defect or a plan deviation, CONFIRM it — the escape hatch is for clear plan-vs-code conflicts only. You are read-only: modify no files, no git commits.
 
 Return structured output:
 - confirmed: the findings to fix, verbatim (empty if none survive)
-- rejected: one string per STALE/UNREALISTIC/DUPLICATE finding — "{the finding} — {CLASSIFICATION} — {rationale/evidence}"`
+- rejected: one string per STALE/UNREALISTIC/DUPLICATE finding — "{the finding} — {CLASSIFICATION} — {rationale/evidence}"
+- planDeviations: one string per PLAN_DEVIATION — "{the finding} — {which plan clause vs which code reality} — {why fixing toward the plan's letter would be wrong}"`
 }
 
 function fixerPrompt(blocking, round) {
@@ -745,6 +751,7 @@ let review = 'NOT RUN'
 let reviewNits = []
 let unresolvedFindings = []
 let triageRejected = []
+let planDeviations = [] // PLAN_DEVIATION escalations — human decision, never auto-fixed
 if (!execFailed && validation === 'PASS') {
   let fixed = 0
   let prevBlocking = Infinity
@@ -770,13 +777,14 @@ if (!execFailed && validation === 'PASS') {
         nits: panel.flatMap(p => p.nits ?? []),
       }
     } else {
-      r = await agent(codexCodeReviewerPrompt(null, round, appliedFixes, triageRejected), { label: `code review r${round}:codex`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })
+      r = await agent(codexCodeReviewerPrompt(null, round, appliedFixes, triageRejected, planDeviations), { label: `code review r${round}:codex`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })
       if (!r) { review = 'UNRESOLVED'; unresolvedFindings = ['Reviewer agent died.']; break }
       if (r.verdict === 'UNAVAILABLE') { review = 'UNRESOLVED'; unresolvedFindings = [`Codex CLI unavailable at code-review round ${round} — fixes not re-verified.`]; break }
     }
     reviewNits = r.nits ?? []
+    const devTag = () => planDeviations.length ? `; ${planDeviations.length} plan deviations escalated` : ''
     if (r.verdict === 'PASS') {
-      review = fixed ? `PASS (panel, after ${fixed} fix rounds)` : 'PASS (panel)'
+      review = fixed ? `PASS (panel, after ${fixed} fix rounds${devTag()})` : `PASS (panel${devTag()})`
       break
     }
     // Triage gate (reevaluator seat, user decision 2026-07-25): re-verify each
@@ -789,12 +797,13 @@ if (!execFailed && validation === 'PASS') {
       const t = await agent(triagePrompt(blocking, round), { label: `triage r${round}`, model: 'sonnet', phase: 'Code review', schema: TRIAGE_OUT })
       if (t) {
         triageRejected.push(...(t.rejected ?? []))
+        planDeviations.push(...(t.planDeviations ?? []))
         blocking = t.confirmed ?? []
-        log(`triage r${round}: ${blocking.length} confirmed, ${(t.rejected ?? []).length} rejected`)
+        log(`triage r${round}: ${blocking.length} confirmed, ${(t.rejected ?? []).length} rejected, ${(t.planDeviations ?? []).length} plan deviations escalated`)
       }
     }
     if (!blocking.length) {
-      review = fixed ? `PASS (panel; round-${round} findings all triaged out, after ${fixed} fix rounds)` : `PASS (panel; round-${round} findings all triaged out)`
+      review = fixed ? `PASS (panel; round-${round} findings all triaged out, after ${fixed} fix rounds${devTag()})` : `PASS (panel; round-${round} findings all triaged out${devTag()})`
       break
     }
     // Convergence-aware stop (2026-07-24, wf_11c56662): the old hard 2-fix cap bailed
@@ -825,6 +834,7 @@ return {
   validationIssues,
   review,
   unresolvedFindings,
+  planDeviations,
   triageRejected,
   nits: reviewNits,
   planNits,

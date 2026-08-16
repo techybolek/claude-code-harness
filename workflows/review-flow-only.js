@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review-flow-only',
   description: 'Standalone Validate + Code-review extraction of run-review-flow — re-verify an existing implementation (e.g. after a manual fix) with the same codex panel and fixer loop',
-  whenToUse: 'The sanctioned post-manual-fix path from exec:run-flow (never exec:review-loop/review-panel). Args: { planPath, validationCommands?: string[], skipValidation?: boolean, changedFiles?: string[] (the complete delta since the last full validation pass — delta-scopes validation; omit for a full pass), baseRef?: string (committed-range mode: review git diff <baseRef> — working tree vs base — instead of the uncommitted diff; pass the branch merge-base for a fully committed feature branch, e.g. a completed Ralph run) }.',
+  whenToUse: 'The sanctioned post-manual-fix path from exec:run-flow (never exec:review-loop/review-panel). Args: { planPath, validationCommands?: string[], skipValidation?: boolean, changedFiles?: string[] (the complete delta since the last full validation pass — delta-scopes validation; omit for a full pass), baseRef?: string (committed-range mode: review git diff <baseRef> — working tree vs base — instead of the uncommitted diff; pass the branch merge-base for a fully committed feature branch, e.g. a completed Ralph run), specPath?: string (the user-authored source spec — intent authority above the plan; enables spec-grounded PLAN_DEVIATION triage) }.',
   phases: [
     { title: 'Validate', detail: 'full-suite cross-task validation + runtime verification' },
     { title: 'Code review', detail: 'all-codex lens panel → triage gate (stale/unrealistic findings rejected) → fix loop while confirmed count shrinks; plateau after 2 fixes or 4 fix rounds stops (review-panel.md policy)' },
@@ -27,6 +27,10 @@ const changedFiles = Array.isArray(_args.changedFiles) ? _args.changedFiles : []
 // `git diff <baseRef>` — working tree vs base — covering the committed work plus
 // any uncommitted fixer edits in later rounds. Absent → uncommitted-diff mode.
 const baseRef = typeof _args.baseRef === 'string' && _args.baseRef.trim() ? _args.baseRef.trim() : null
+// Source spec (intent authority): the user-authored artifact the plan was derived
+// from. Authority hierarchy: spec (intent) > plan (Done-when, invariants) >
+// mechanism prescriptions — the triage gate uses it to adjudicate PLAN_DEVIATION.
+const specPath = typeof _args.specPath === 'string' && _args.specPath.trim() ? _args.specPath.trim() : null
 if (!planPath) {
   return { status: 'FAILED', stage: 'input', reason: 'Invalid args: need planPath (plus optional validationCommands, skipValidation).' }
 }
@@ -51,6 +55,7 @@ const TRIAGE_OUT = {
   properties: {
     confirmed: { type: 'array', items: { type: 'string' } },
     rejected: { type: 'array', items: { type: 'string' } },
+    planDeviations: { type: 'array', items: { type: 'string' } },
   },
 }
 
@@ -112,7 +117,10 @@ Return structured output: status SUCCESS only if there are no genuine regression
 // Lens keys must match the table in review-panel.md — definitions live there only.
 const CODE_LENSES = ['correctness', 'resilience', 'tests']
 
-function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = []) {
+function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = [], deviations = []) {
+  const deviationsNote = deviations.length
+    ? `\n## Plan deviations already ESCALATED for human decision — append this block verbatim to codex's prompt\nThese plan-vs-code conflicts are already escalated for human ruling. Do NOT re-report them, as blocking or otherwise.\n${deviations.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
+    : ''
   const appliedNote = applied.length
     ? `\n## Fixes applied in earlier rounds — append this block verbatim to codex's prompt\nFor EACH finding below, verify the fix actually lies on the code path the finding's scenario exercises: read the fix, then trace the scenario's entry point (route config → the component the route really renders → its template/inheritance chain; or caller → callee) and confirm it reaches the changed code. A fix that compiles but sits on a different component/route/path than the scenario described is NOT fixed — re-report it as blocking prefixed "UNFIXED:". If the fix does address the scenario, do not re-litigate it for rigor.\n${applied.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
     : ''
@@ -125,19 +133,19 @@ function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = []) {
   return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex code panelists' : 'the cross-model Codex code re-reviewer'} (wrapper contract: ~/.claude/commands/exec/review-panel.md, "The Codex panelist" section). You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
 1. Read ~/.claude/commands/exec/review-panel.md and ~/.claude/commands/exec/review-loop.md in full.
-2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions).${baseRef ? ` baseRef = ${baseRef}: apply review-loop.md's committed-range mode — the composed codex prompt MUST tell codex to run \`git diff ${baseRef}\` (never bare git diff) as the diff under review.` : ''} ${role} Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
+2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath}${specPath ? ` and {spec-file-path} = ${specPath}` : ' and no spec (omit spec-specific instructions)'}.${baseRef ? ` baseRef = ${baseRef}: apply review-loop.md's committed-range mode — the composed codex prompt MUST tell codex to run \`git diff ${baseRef}\` (never bare git diff) as the diff under review.` : ''} ${role} Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
 3. ${codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`)}
-${appliedNote}${disputedNote}
+${appliedNote}${disputedNote}${deviationsNote}
 Structured output:
 - verdict: PASS | NEEDS_WORK | UNAVAILABLE
-- blocking: list of strings, one per blocking finding from codex's report — "file:line — what's wrong — the input/scenario that triggers it — expected fix"
+- blocking: list of strings, one per blocking finding from codex's report — "file:line — what's wrong — the input/scenario that triggers it — expected fix". Findings codex reports under "Plan deviations" (or labels PLAN-DEVIATION) go in this list too, verbatim with the PLAN-DEVIATION label kept, and count toward a NEEDS_WORK verdict — the triage gate is the adjudicator that escalates them for human decision.
 - nits: list of strings`
 }
 
 function triagePrompt(blocking, round) {
   return `You are the finding-triage gate between the code-review panel and the fixer, round ${round}. Independent parallel reviewers produced the blocking findings below. Before any fix work is dispatched, re-evaluate each one against the CURRENT code and the plan: reviewers sometimes report from stale expectations (a change already applied) or construct concrete-but-unreachable scenarios, and a wasted fix round costs far more than this check.
 
-Plan (scope and acceptance authority): ${planPath}
+Plan (scope and acceptance authority): ${planPath}${specPath ? `\nSpec (intent authority): ${specPath}` : ''}
 ${baseRef ? `The diff under review is \`git diff ${baseRef}\` (committed + uncommitted).` : ''}
 ## Findings
 ${blocking.map((f, i) => `${i + 1}. ${f}`).join('\n')}
@@ -147,12 +155,14 @@ For EACH finding, read the current code at its location — plus enough surround
 - **STALE**: the claimed defect is not present in the current code (already fixed, or the reviewer misread) — cite file:line evidence.
 - **UNREALISTIC**: technically constructible but the scenario requires inputs the UI cannot produce, concurrency the deployment does not exhibit, or data magnitudes outside the domain's real ranges — or it mandates rigor machinery (locks, concurrency proofs, fault injection, precision handling) the spec/plan never asked for. One-line rationale grounded in the spec/plan or the code.
 - **DUPLICATE**: same defect as another finding — confirm one, mark the rest duplicates of it.
+- **PLAN_DEVIATION**: the finding's substance is plan non-conformance (a missed mechanism prescription, a Hard Invariant's letter, an enumerated list) but the code is behaviorally defensible — because fixing toward the plan's letter would violate another plan clause/invariant, contradict the spec's intent, or degrade real behavior; because the plan's clauses are mutually unsatisfiable on this point (the spec's intent is the tiebreaker for which side the code may keep); or because the deviation is documented (e.g. context.md) and sound on its own merits. Authority hierarchy: spec (intent) > plan (Done-when, invariants) > mechanism prescriptions. NOT a plan deviation: code failing a Done-when because it is genuinely broken or incomplete — that is CONFIRMED. These are escalated for HUMAN decision, never auto-fixed.
 
-Judge severity, never difficulty: a hard-to-fix real defect is CONFIRMED. When genuinely uncertain whether a defect is real, CONFIRM it — the fixer's own verification is the next check; this gate exists to kill clear noise, not to shave real work. You are read-only: modify no files, no git commits.
+Judge severity, never difficulty: a hard-to-fix real defect is CONFIRMED. When genuinely uncertain whether a defect is real, CONFIRM it — the fixer's own verification is the next check; this gate exists to kill clear noise, not to shave real work. Likewise, when uncertain whether something is a genuine defect or a plan deviation, CONFIRM it — the escape hatch is for clear plan-vs-code conflicts only. You are read-only: modify no files, no git commits.
 
 Return structured output:
 - confirmed: the findings to fix, verbatim (empty if none survive)
-- rejected: one string per STALE/UNREALISTIC/DUPLICATE finding — "{the finding} — {CLASSIFICATION} — {rationale/evidence}"`
+- rejected: one string per STALE/UNREALISTIC/DUPLICATE finding — "{the finding} — {CLASSIFICATION} — {rationale/evidence}"
+- planDeviations: one string per PLAN_DEVIATION — "{the finding} — {which plan clause vs which code reality} — {why fixing toward the plan's letter would be wrong}"`
 }
 
 function fixerPrompt(blocking, round) {
@@ -188,6 +198,7 @@ let review = 'NOT RUN'
 let reviewNits = []
 let unresolvedFindings = []
 let triageRejected = []
+let planDeviations = [] // PLAN_DEVIATION escalations — human decision, never auto-fixed
 if (validation !== 'FAIL') {
   let fixed = 0
   let prevBlocking = Infinity
@@ -211,13 +222,14 @@ if (validation !== 'FAIL') {
         nits: panel.flatMap(p => p.nits ?? []),
       }
     } else {
-      r = await agent(codexCodeReviewerPrompt(null, round, appliedFixes, triageRejected), { label: `code review r${round}:codex`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })
+      r = await agent(codexCodeReviewerPrompt(null, round, appliedFixes, triageRejected, planDeviations), { label: `code review r${round}:codex`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })
       if (!r) { review = 'UNRESOLVED'; unresolvedFindings = ['Reviewer agent died.']; break }
       if (r.verdict === 'UNAVAILABLE') { review = 'UNRESOLVED'; unresolvedFindings = [`Codex CLI unavailable at code-review round ${round} — fixes not re-verified.`]; break }
     }
     reviewNits = r.nits ?? []
+    const devTag = () => planDeviations.length ? `; ${planDeviations.length} plan deviations escalated` : ''
     if (r.verdict === 'PASS') {
-      review = fixed ? `PASS (panel, after ${fixed} fix rounds)` : 'PASS (panel)'
+      review = fixed ? `PASS (panel, after ${fixed} fix rounds${devTag()})` : `PASS (panel${devTag()})`
       break
     }
     // Triage gate (reevaluator seat): re-verify each blocking finding against the
@@ -229,12 +241,13 @@ if (validation !== 'FAIL') {
       const t = await agent(triagePrompt(blocking, round), { label: `triage r${round}`, model: 'sonnet', phase: 'Code review', schema: TRIAGE_OUT })
       if (t) {
         triageRejected.push(...(t.rejected ?? []))
+        planDeviations.push(...(t.planDeviations ?? []))
         blocking = t.confirmed ?? []
-        log(`triage r${round}: ${blocking.length} confirmed, ${(t.rejected ?? []).length} rejected`)
+        log(`triage r${round}: ${blocking.length} confirmed, ${(t.rejected ?? []).length} rejected, ${(t.planDeviations ?? []).length} plan deviations escalated`)
       }
     }
     if (!blocking.length) {
-      review = fixed ? `PASS (panel; round-${round} findings all triaged out, after ${fixed} fix rounds)` : `PASS (panel; round-${round} findings all triaged out)`
+      review = fixed ? `PASS (panel; round-${round} findings all triaged out, after ${fixed} fix rounds${devTag()})` : `PASS (panel; round-${round} findings all triaged out${devTag()})`
       break
     }
     // Convergence-aware stop (review-panel.md policy, same as run-review-flow.js).
@@ -257,6 +270,7 @@ return {
   validationIssues,
   review,
   unresolvedFindings,
+  planDeviations,
   triageRejected,
   nits: reviewNits,
 }

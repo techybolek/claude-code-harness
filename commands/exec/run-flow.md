@@ -57,6 +57,7 @@ Print (values come straight from the workflow's returned object):
 - **Validation:** {validation}{ — validationIssues if FAIL}
 - **Review:** {review}
 - **Unresolved findings:** {unresolvedFindings, only if UNRESOLVED}
+- **Plan deviations (human decision required):** {planDeviations — plan-vs-code conflicts the triage gate escalated instead of auto-fixing, each with which clause conflicts and why fixing toward the plan's letter would be wrong; omit section if empty}
 - **Triage-rejected findings:** {triageRejected — panel findings the triage gate rejected as stale/duplicate/unrealistic, with rationale; omit section if empty}
 - **Nits (non-blocking):** {nits + planNits, or "None"}
 - **Decisions made (no human input needed):** {conflict → resolution → reason, one per line; omit section if none}
