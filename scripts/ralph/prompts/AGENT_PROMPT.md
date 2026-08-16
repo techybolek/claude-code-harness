@@ -176,6 +176,12 @@ the appropriate boundary:
   drive the feature in a real browser (playwright-cli), check the console for
   errors, and store a screenshot in `SPEC/ACTIVE/<task-name>/`.
 
+**Shut down what you start.** Every server or long-running process you launch for
+verification (dev server, supabase, watchers) MUST be killed before you end the
+iteration — a leaked `next dev` squats its port for every later run and manual
+session. The harness also sweeps worktree-cwd leftovers after each iteration,
+but do not rely on it.
+
 ### Phase 5: DOCUMENT & COMMIT
 
 1. Update tasks.md - mark items `[x]`

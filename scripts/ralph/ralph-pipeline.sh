@@ -43,6 +43,30 @@ log_success() { echo -e "${GREEN}[PIPELINE]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[PIPELINE]${NC} $1"; }
 log_error() { echo -e "${RED}[PIPELINE]${NC} $1"; }
 
+# Reap servers/watchers a review agent left running in the worktree (same leak
+# ralph.sh guards against: a verification `next dev` squatting port 3000 across
+# runs). Anything whose cwd is inside the worktree after the review session has
+# exited is a leak; interactive shells are spared (a user terminal cd'd there).
+kill_worktree_orphans() {
+    local worktree_path="$1"
+    local p pid cwd comm
+    for p in /proc/[0-9]*; do
+        pid="${p#/proc/}"
+        [ "$pid" = "$$" ] && continue
+        cwd=$(readlink "$p/cwd" 2>/dev/null) || continue
+        case "$cwd" in
+            "$worktree_path"|"$worktree_path"/*) ;;
+            *) continue ;;
+        esac
+        comm=$(cat "$p/comm" 2>/dev/null)
+        case "$comm" in bash|zsh|sh|fish|dash) continue ;; esac
+        if kill "$pid" 2>/dev/null; then
+            log_warn "Killed leftover process $pid ($comm) still running in the worktree"
+        fi
+    done
+    return 0
+}
+
 SKIP_RALPH=0
 SKIP_VALIDATION=0
 ITERATIONS=20
@@ -204,6 +228,8 @@ claude --dangerously-skip-permissions \
     --append-system-prompt "$REVIEW_CONTRACT" \
     -p "/review-flow-only $REVIEW_ARGS" > "$REVIEW_LOG" 2>&1 || review_rc=$?
 popd > /dev/null
+
+kill_worktree_orphans "$WORKTREE_PATH"
 
 if [ $review_rc -ne 0 ]; then
     log_error "Review session exited with code $review_rc — see $REVIEW_LOG"

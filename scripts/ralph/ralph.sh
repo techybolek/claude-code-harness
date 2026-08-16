@@ -122,6 +122,31 @@ get_branch_name() {
     echo "ralph/${1}"
 }
 
+# Agents sometimes leave servers running: a `next dev` started for verification
+# on 2026-08-15 survived its iteration and squatted port 3000 a day later. After
+# the iteration's claude exits, anything still running with its cwd inside the
+# worktree is a leak — kill it. Interactive shells are spared so a user terminal
+# cd'd into the worktree never dies.
+kill_worktree_orphans() {
+    local worktree_path="$1"
+    local p pid cwd comm
+    for p in /proc/[0-9]*; do
+        pid="${p#/proc/}"
+        [ "$pid" = "$$" ] && continue
+        cwd=$(readlink "$p/cwd" 2>/dev/null) || continue
+        case "$cwd" in
+            "$worktree_path"|"$worktree_path"/*) ;;
+            *) continue ;;
+        esac
+        comm=$(cat "$p/comm" 2>/dev/null)
+        case "$comm" in bash|zsh|sh|fish|dash) continue ;; esac
+        if kill "$pid" 2>/dev/null; then
+            log_warn "Killed leftover process $pid ($comm) still running in the worktree"
+        fi
+    done
+    return 0
+}
+
 # Build the agent prompt
 build_prompt() {
     local worktree_path="$1"
@@ -307,8 +332,10 @@ cleanup() {
 
     log_info "Cleaning up Ralph artifacts for $task_dir"
 
-    # Remove worktree
+    # Remove worktree (killing anything still running inside it first —
+    # deleting a live server's cwd leaves it broken AND holding its port)
     if worktree_exists "$worktree_path"; then
+        kill_worktree_orphans "$worktree_path"
         log_info "Removing worktree at $worktree_path"
         git -C "$PROJECT_ROOT" worktree remove --force "$worktree_path" 2>/dev/null || rm -rf "$worktree_path"
     fi
@@ -433,6 +460,9 @@ main() {
         wait $CLAUDE_PID || exit_code=$?
         CLAUDE_PID=""
         popd > /dev/null
+
+        # Reap servers/watchers the agent left running (see kill_worktree_orphans)
+        kill_worktree_orphans "$worktree_path"
 
         # Check for Claude errors
         if [ $exit_code -ne 0 ]; then
