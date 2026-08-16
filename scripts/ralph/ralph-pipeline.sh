@@ -13,6 +13,8 @@
 #   cd <project_root> && ~/.claude/scripts/ralph/ralph-pipeline.sh [iterations]
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh --task <spec>  # select spec when several are ACTIVE
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-ralph   # review-only, e.g. rerun
+#   ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-validation  # review without the validate stage
+#                                             # (e.g. ralph already ran the full suite)
 #
 # Task selection: --task <name> or RALPH_TASK=<name>; otherwise SPEC/ACTIVE/
 # must contain exactly one NNNN- dir (multiple → hard error, never a silent pick).
@@ -41,10 +43,12 @@ log_warn() { echo -e "${YELLOW}[PIPELINE]${NC} $1"; }
 log_error() { echo -e "${RED}[PIPELINE]${NC} $1"; }
 
 SKIP_RALPH=0
+SKIP_VALIDATION=0
 ITERATIONS=20
 while [ $# -gt 0 ]; do
     case "$1" in
         --skip-ralph) SKIP_RALPH=1 ;;
+        --skip-validation) SKIP_VALIDATION=1 ;;
         --task)
             if [ $# -lt 2 ]; then
                 log_error "--task requires a value (spec dir name in SPEC/ACTIVE/)"
@@ -139,11 +143,13 @@ if [ ! -f "$WORKTREE_PATH/$PLAN_PATH" ]; then
     exit 1
 fi
 
-REVIEW_ARGS=$(python3 - "$PLAN_PATH" "${VALIDATION_COMMANDS[@]+"${VALIDATION_COMMANDS[@]}"}" <<'EOF'
+REVIEW_ARGS=$(python3 - "$PLAN_PATH" "$SKIP_VALIDATION" "${VALIDATION_COMMANDS[@]+"${VALIDATION_COMMANDS[@]}"}" <<'EOF'
 import json, sys
-plan, cmds = sys.argv[1], sys.argv[2:]
+plan, skip, cmds = sys.argv[1], sys.argv[2], sys.argv[3:]
 args = {"planPath": plan}
-if cmds:
+if skip == "1":
+    args["skipValidation"] = True
+elif cmds:
     args["validationCommands"] = cmds
 print(json.dumps(args))
 EOF

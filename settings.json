@@ -48,7 +48,8 @@
     "command": "bash ~/.claude/hooks/statusline.sh"
   },
   "enabledPlugins": {
-    "typescript-lsp@claude-plugins-official": false
+    "typescript-lsp@claude-plugins-official": false,
+    "skill-creator@claude-plugins-official": true
   },
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,

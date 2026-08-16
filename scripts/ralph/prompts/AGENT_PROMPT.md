@@ -399,3 +399,18 @@ TEST FAILS -> ANALYZE -> FIX -> RE-TEST -> (repeat until green)
 9. **Complete:**
    - More items remain -> `<ralph>TASK_ITEM_DONE</ralph>`
    - All done -> `<ralph>ALL_TASKS_DONE</ralph>`
+
+---
+
+## FINAL MESSAGE CONTRACT (read last, applies always)
+
+Your final message MUST end with exactly one `<ralph>` marker:
+
+- More `[ ]` items remain → `<ralph>TASK_ITEM_DONE</ralph>`
+- All items `[x]` → run the full suite once, write `.runs/TASK_DIR/SUMMARY.md`
+  (EXACTLY that path — a summary anywhere else, e.g. under `SPEC/ACTIVE/`,
+  does not count and the harness will reject the marker), then output
+  `<ralph>ALL_TASKS_DONE</ralph>`
+
+Ending without a marker wastes an entire iteration: a fresh agent will spin up
+just to re-verify what you already finished.

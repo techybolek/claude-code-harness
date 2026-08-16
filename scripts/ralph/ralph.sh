@@ -137,6 +137,11 @@ build_prompt() {
         exit 1
     fi
 
+    # Substitute the TASK_DIR placeholder so the agent never has to infer paths
+    # from a raw template token (0002-customer-shop-membership, 2026-08-15:
+    # eight iterations wrote SUMMARY.md under SPEC/ACTIVE/ instead of .runs/).
+    prompt_template="${prompt_template//TASK_DIR/${task_dir}}"
+
     # Build file references
     local task_path="SPEC/ACTIVE/${task_dir}"
     local progress_file=".runs/${task_dir}/ralph_progress.txt"
@@ -158,6 +163,7 @@ Session ID: ${session_id}
 Task: ${task_dir}
 Worktree Path: ${worktree_path}
 Progress File: ${progress_file}
+Summary File (required before ALL_TASKS_DONE, exactly this path): .runs/${task_dir}/SUMMARY.md
 
 ${health_section}${prompt_template}
 PROMPT
@@ -395,6 +401,7 @@ main() {
     local allowed_tools="Write(${worktree_path}/**),Edit(${worktree_path}/**),Read(*),Glob(*),Grep(*),Bash(pytest:*),Bash(python -m pytest:*),Bash(ruff check:*),Bash(ruff format:*),Bash(npm test:*),Bash(npm run:*),Bash(npx:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*)"
 
     # Main iteration loop
+    local rejected_claims=0
     for ((i=1; i<=$max_iterations; i++)); do
         echo ""
         log_info "========== Iteration $i of $max_iterations =========="
@@ -457,8 +464,24 @@ main() {
                 print_summary "$worktree_path" "$task_dir" "$session_id" "complete"
                 exit 0
             fi
-            log_warn "ALL_TASKS_DONE claimed without .runs/${task_dir}/SUMMARY.md — treating as incomplete, continuing"
-            log_progress "$worktree_path" "$task_dir" "$session_id" "no_marker" "Iteration $i claimed ALL_TASKS_DONE without SUMMARY.md — continuing"
+            # Tell the NEXT iteration's agent exactly what is missing and where —
+            # the progress file is the only channel it reads. A bare "without
+            # SUMMARY.md" cost 7 iterations on 0002-customer-shop-membership
+            # (2026-08-15): the summary sat under SPEC/ACTIVE/ and every fresh
+            # agent assumed harness flakiness.
+            local stray_summary
+            stray_summary=$(find "$worktree_path" -name node_modules -prune -o -name SUMMARY.md -print 2>/dev/null | head -1)
+            stray_summary="${stray_summary#"$worktree_path"/}"
+            local reject_detail="Iteration $i claimed ALL_TASKS_DONE but .runs/${task_dir}/SUMMARY.md does not exist${stray_summary:+ — found SUMMARY.md at $stray_summary, which is the WRONG location; write it to .runs/${task_dir}/SUMMARY.md}"
+            log_warn "$reject_detail"
+            log_progress "$worktree_path" "$task_dir" "$session_id" "no_marker" "$reject_detail — continuing"
+            rejected_claims=$((rejected_claims + 1))
+            if [ "$rejected_claims" -ge 3 ]; then
+                log_error "ALL_TASKS_DONE rejected $rejected_claims times in a row — stopping for human review instead of burning iterations"
+                log_progress "$worktree_path" "$task_dir" "$session_id" "error_stop" "Completion claim rejected $rejected_claims consecutive times (missing .runs/${task_dir}/SUMMARY.md) — human review needed"
+                print_summary "$worktree_path" "$task_dir" "$session_id" "error"
+                exit 1
+            fi
         elif printf '%s' "$final_result" | grep -qF "$ERROR_STOP"; then
             log_progress "$worktree_path" "$task_dir" "$session_id" "error_stop" "Agent encountered error and stopped"
             print_summary "$worktree_path" "$task_dir" "$session_id" "error"
@@ -466,6 +489,7 @@ main() {
         elif printf '%s' "$final_result" | grep -qF "$TASK_ITEM_DONE"; then
             log_success "Task item completed. Continuing to next..."
             log_progress "$worktree_path" "$task_dir" "$session_id" "item_complete" "Task item completed in iteration $i"
+            rejected_claims=0
         else
             log_warn "No completion marker found in output"
             log_progress "$worktree_path" "$task_dir" "$session_id" "no_marker" "Iteration $i completed without marker"
