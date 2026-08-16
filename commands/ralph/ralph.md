@@ -108,6 +108,11 @@ All commands must be run from a **terminal** (not IDE) to ensure `--dangerously-
 
 When Ralph outputs `<ralph>ALL_TASKS_DONE</ralph>`:
 
+The pipeline's review stage (`ralph-pipeline.sh`, incl. `--skip-ralph` reruns) now
+panel-reviews `git diff <merge-base>` automatically — the committed branch work —
+by passing `baseRef` to `/review-flow-only`. The commands below are for manual
+human review:
+
 ```bash
 # Review changes on the branch
 git log main..ralph/0001-<task-name>

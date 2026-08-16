@@ -4,20 +4,20 @@ description: "Panel Review & Fix Loop: 3 parallel lens reviewers + a cross-model
 
 # Panel Review & Fix Loop
 
-You are an orchestrator. Same job as `~/.claude/commands/exec/review-loop.md` — an automated review→fix loop on uncommitted changes — but round 1 runs a **panel of 3 parallel reviewers with distinct lenses plus a cross-model Codex reviewer** instead of one reviewer. Independent perspectives catch what a single pass misses; every defect exists from the start, and one reviewer only ever sees a subset. The Codex panelist exists because same-model reviewers share priors and therefore blind spots — a different model with an end-to-end-trace process has repeatedly caught absence defects (stale no-op tests, dead-code vestiges) that all three lens reviewers missed.
+You are an orchestrator. Same job as `~/.claude/commands/exec/review-loop.md` — an automated review→fix loop on the changes under review — but round 1 runs a **panel of 3 parallel reviewers with distinct lenses plus a cross-model Codex reviewer** instead of one reviewer. Independent perspectives catch what a single pass misses; every defect exists from the start, and one reviewer only ever sees a subset. The Codex panelist exists because same-model reviewers share priors and therefore blind spots — a different model with an end-to-end-trace process has repeatedly caught absence defects (stale no-op tests, dead-code vestiges) that all three lens reviewers missed.
 
 **Single source of truth:** the reviewer prompt, fixer prompt, classification rules (blocking vs nit), and report formats all live in `review-loop.md`. This command adds ONLY the panel structure on top. Do not restate or fork its prompts — read them from that file. Improve the reviewer there and this command inherits it.
 
 ## Input
 $ARGUMENTS
 
-Same as `review-loop.md`: up to two paths, `<plan> [spec]`, both optional.
+Same as `review-loop.md`: up to two paths, `<plan> [spec]`, both optional, plus the optional `baseRef=<ref>` token (committed-range mode — see review-loop.md).
 
 ## Protocol
 
 ### Step 0: Resolve Input
 
-Execute `review-loop.md` **Step 0** exactly (resolve plan/spec paths, confirm uncommitted changes exist; STOP if not).
+Execute `review-loop.md` **Step 0** exactly (resolve plan/spec paths and diff scope; confirm the diff under review is non-empty — uncommitted changes, or `git diff <baseRef>` when a baseRef is given; STOP if not).
 
 ## Lenses
 
@@ -32,10 +32,10 @@ Execute `review-loop.md` **Step 0** exactly (resolve plan/spec paths, confirm un
 Spawn **3 reviewer subagents and the Codex reviewer in parallel** (one message: three Agent calls with `subagent_type: "general-purpose"` and `model: "opus"`, plus one background Bash call). Each Agent gets:
 
 ```
-You are one of 4 parallel independent reviewers of the same uncommitted changes, each with a different focus.
+You are one of 4 parallel independent reviewers of the same changes under review, each with a different focus.
 
 1. Read ~/.claude/commands/exec/review-loop.md in full.
-2. Execute its Step 1 reviewer prompt exactly, with {plan-file-path} = {plan} and {spec-file-path} = {spec}.
+2. Execute its Step 1 reviewer prompt exactly, with {plan-file-path} = {plan} and {spec-file-path} = {spec}, and, if a baseRef was given, baseRef = {baseRef} (review-loop.md's committed-range mode: the diff under review is `git diff {baseRef}`).
 3. Your lens — {key}: {focus from the table above}. Run ALL the angles, but dig deepest on your lens. Report every blocking finding you can see, regardless of lens — each finding you hold back costs a full extra round.
 
 Report in review-loop.md's exact "### Review" format.

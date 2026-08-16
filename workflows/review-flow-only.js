@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review-flow-only',
   description: 'Standalone Validate + Code-review extraction of run-review-flow — re-verify an existing implementation (e.g. after a manual fix) with the same codex panel and fixer loop',
-  whenToUse: 'The sanctioned post-manual-fix path from exec:run-flow (never exec:review-loop/review-panel). Args: { planPath, validationCommands?: string[], skipValidation?: boolean, changedFiles?: string[] (the complete delta since the last full validation pass — delta-scopes validation; omit for a full pass) }.',
+  whenToUse: 'The sanctioned post-manual-fix path from exec:run-flow (never exec:review-loop/review-panel). Args: { planPath, validationCommands?: string[], skipValidation?: boolean, changedFiles?: string[] (the complete delta since the last full validation pass — delta-scopes validation; omit for a full pass), baseRef?: string (committed-range mode: review git diff <baseRef> — working tree vs base — instead of the uncommitted diff; pass the branch merge-base for a fully committed feature branch, e.g. a completed Ralph run) }.',
   phases: [
     { title: 'Validate', detail: 'full-suite cross-task validation + runtime verification' },
     { title: 'Code review', detail: 'all-codex lens panel → triage gate (stale/unrealistic findings rejected) → fix loop while confirmed count shrinks; plateau after 2 fixes or 4 fix rounds stops (review-panel.md policy)' },
@@ -22,6 +22,11 @@ const skipValidation = _args.skipValidation === true
 // whole feature sits uncommitted in the tree). Present → validation skips suites
 // and runtime steps the delta provably cannot affect. Absent → full pass.
 const changedFiles = Array.isArray(_args.changedFiles) ? _args.changedFiles : []
+// Committed-range mode (review-loop.md's baseRef mode): the feature is already
+// committed (e.g. a completed Ralph branch), so the diff under review is
+// `git diff <baseRef>` — working tree vs base — covering the committed work plus
+// any uncommitted fixer edits in later rounds. Absent → uncommitted-diff mode.
+const baseRef = typeof _args.baseRef === 'string' && _args.baseRef.trim() ? _args.baseRef.trim() : null
 if (!planPath) {
   return { status: 'FAILED', stage: 'input', reason: 'Invalid args: need planPath (plus optional validationCommands, skipValidation).' }
 }
@@ -67,6 +72,10 @@ The "-${slug}" filename suffix is MANDATORY — parallel panelists share the tem
 Then read the output file and transcribe codex's findings VERBATIM into the structured output — do not re-judge, drop, merge, or add findings of your own.
 
 If the codex CLI is missing, exits non-zero, produces no output file, or hits the timeout: return verdict UNAVAILABLE with all lists empty. Never invent a review, never retry more than once.`
+
+const diffScopeNote = baseRef
+  ? `\nThe changes under review are \`git diff ${baseRef}\` (working tree vs that base — the committed feature work plus any uncommitted fix edits). Wherever review-loop.md says "the uncommitted changes" or bare \`git diff\`, use this diff instead. Untracked files still count (git status).\n`
+  : ''
 
 function deltaNote() {
   if (!changedFiles.length) return ''
@@ -116,7 +125,7 @@ function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = []) {
   return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex code panelists' : 'the cross-model Codex code re-reviewer'} (wrapper contract: ~/.claude/commands/exec/review-panel.md, "The Codex panelist" section). You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
 1. Read ~/.claude/commands/exec/review-panel.md and ~/.claude/commands/exec/review-loop.md in full.
-2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions). ${role} Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
+2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions).${baseRef ? ` baseRef = ${baseRef}: apply review-loop.md's committed-range mode — the composed codex prompt MUST tell codex to run \`git diff ${baseRef}\` (never bare git diff) as the diff under review.` : ''} ${role} Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
 3. ${codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`)}
 ${appliedNote}${disputedNote}
 Structured output:
@@ -129,7 +138,7 @@ function triagePrompt(blocking, round) {
   return `You are the finding-triage gate between the code-review panel and the fixer, round ${round}. Independent parallel reviewers produced the blocking findings below. Before any fix work is dispatched, re-evaluate each one against the CURRENT code and the plan: reviewers sometimes report from stale expectations (a change already applied) or construct concrete-but-unreachable scenarios, and a wasted fix round costs far more than this check.
 
 Plan (scope and acceptance authority): ${planPath}
-
+${baseRef ? `The diff under review is \`git diff ${baseRef}\` (committed + uncommitted).` : ''}
 ## Findings
 ${blocking.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 
@@ -150,7 +159,7 @@ function fixerPrompt(blocking, round) {
   return `You are the fixer subagent defined in ~/.claude/commands/exec/review-loop.md (its Step 2 fixer prompt). Fix round ${round}.
 
 1. Read ~/.claude/commands/exec/review-loop.md in full and follow its Step 2 fixer instructions exactly, with {plan-file-path} = ${planPath} and no spec.
-
+${diffScopeNote}
 ## Blocking findings
 ${blocking.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 

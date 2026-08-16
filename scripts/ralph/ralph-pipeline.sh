@@ -143,10 +143,19 @@ if [ ! -f "$WORKTREE_PATH/$PLAN_PATH" ]; then
     exit 1
 fi
 
-REVIEW_ARGS=$(python3 - "$PLAN_PATH" "$SKIP_VALIDATION" "${VALIDATION_COMMANDS[@]+"${VALIDATION_COMMANDS[@]}"}" <<'EOF'
+# Ralph agents commit every iteration — the review target is the committed
+# range (plus any later uncommitted fixer edits): working tree vs merge-base.
+BASE_REF=$(git -C "$WORKTREE_PATH" merge-base main HEAD 2>/dev/null || true)
+if [ -z "$BASE_REF" ]; then
+    log_warn "merge-base main..HEAD failed in worktree — review falls back to uncommitted changes only"
+fi
+
+REVIEW_ARGS=$(python3 - "$PLAN_PATH" "$SKIP_VALIDATION" "$BASE_REF" "${VALIDATION_COMMANDS[@]+"${VALIDATION_COMMANDS[@]}"}" <<'EOF'
 import json, sys
-plan, skip, cmds = sys.argv[1], sys.argv[2], sys.argv[3:]
+plan, skip, base, cmds = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
 args = {"planPath": plan}
+if base:
+    args["baseRef"] = base
 if skip == "1":
     args["skipValidation"] = True
 elif cmds:
@@ -160,17 +169,43 @@ mkdir -p "$(dirname "$REVIEW_LOG")"
 log_info "Stage: review-flow-only (log: $REVIEW_LOG)"
 log_info "Args: $REVIEW_ARGS"
 
+# The headless session dies (taking a still-running workflow with it) if the
+# model ends its turn with a promise instead of a result — observed 2026-08-16
+# on 0002-customer-shop-membership: "workflow is running in the background,
+# I'll let you know" killed the workflow mid-fix-round. The contract below makes
+# an incomplete run detectable: no REVIEW_VERDICT line → treat as killed.
+REVIEW_CONTRACT='This is a headless -p run: your final message ends the CLI process and kills any still-running background workflow. After launching the review workflow, never end a turn by promising future results ("running in the background", "I will let you know") — wait for the workflow completion notification instead. Your final message MUST begin with the line "REVIEW_VERDICT:" followed by the workflow'"'"'s returned JSON verbatim.'
+
+# Snapshot pre-review tracked dirt so stage 4 commits ONLY what the fixer
+# changed (same incident: pre-existing ralph_progress.txt edits were committed
+# as "fix(review)" after the workflow died having fixed nothing).
+PRE_DIRTY_FILE=$(mktemp)
+git -C "$WORKTREE_PATH" status --porcelain --untracked-files=no | awk '{print substr($0,4)}' | sort > "$PRE_DIRTY_FILE"
+
 review_rc=0
 pushd "$WORKTREE_PATH" > /dev/null
+# The panel+triage+fixer workflow runs well past claude -p's default 10-minute
+# background-wait ceiling (v2.1.182+), which kills the workflow mid-run and was
+# the actual cause of the two 2026-08-16 mid-fix deaths. 0 = wait indefinitely;
+# we cap at 60 min so a genuinely hung run still dies.
+CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${REVIEW_WAIT_CEILING_MS:-3600000}" \
 claude --dangerously-skip-permissions \
     --model "${REVIEW_MODEL:-claude-sonnet-5}" \
     --verbose \
     --output-format stream-json \
+    --append-system-prompt "$REVIEW_CONTRACT" \
     -p "/review-flow-only $REVIEW_ARGS" > "$REVIEW_LOG" 2>&1 || review_rc=$?
 popd > /dev/null
 
 if [ $review_rc -ne 0 ]; then
     log_error "Review session exited with code $review_rc — see $REVIEW_LOG"
+    exit 1
+fi
+
+FINAL_MSG=$(grep '"type":"result"' "$REVIEW_LOG" | tail -1 | jq -r '.result // ""' 2>/dev/null)
+if ! printf '%s' "$FINAL_MSG" | grep -q 'REVIEW_VERDICT:'; then
+    log_error "Review session ended without a REVIEW_VERDICT line — the workflow was likely killed mid-run; NOT committing anything. See $REVIEW_LOG"
+    rm -f "$PRE_DIRTY_FILE"
     exit 1
 fi
 
@@ -180,12 +215,14 @@ fi
 # blanket add -A would commit. New files the fixer created are listed below
 # for a manual decision instead.
 pushd "$WORKTREE_PATH" > /dev/null
-if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-    git add -u
+NEW_PATHS=$(git status --porcelain --untracked-files=no | awk '{print substr($0,4)}' | sort | comm -13 "$PRE_DIRTY_FILE" -)
+rm -f "$PRE_DIRTY_FILE"
+if [ -n "$NEW_PATHS" ]; then
+    printf '%s\n' "$NEW_PATHS" | xargs -d '\n' git add --
     git commit -m "fix(review): apply review-flow-only panel findings" --quiet
     log_success "Committed fixer changes: $(git log -1 --format=%h)"
 else
-    log_info "Review made no tracked changes (nothing to commit)"
+    log_info "Review made no new tracked changes (nothing to commit; pre-existing dirt left alone)"
 fi
 UNTRACKED=$(git status --porcelain | grep '^??' | grep -v '^?? \.runs/' || true)
 popd > /dev/null

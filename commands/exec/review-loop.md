@@ -7,12 +7,14 @@ model: sonnet
 
 > **Lockstep note (for editors, not executors):** code-review policy is duplicated across 4 files that must be edited together — this file, `review-panel.md` (lenses + codex wrapper), and the embedded prompt copies in `~/.claude/workflows/run-review-flow.js` and `~/.claude/workflows/review-flow-only.js` (REALISM_RULE, triage/fixer prompts, severity floors). A change landed in only some of them means the workflow and standalone paths review to different standards. Plan-review policy has the same split: `plan-review.md` + `run-review-flow.js`.
 
-You are an orchestrator. Your job is to run an automated review→fix loop on uncommitted changes. Stay lightweight — you spawn subagents, track results, and report. You do no coding yourself. Reviewers are read-only; only fixers touch code.
+You are an orchestrator. Your job is to run an automated review→fix loop on the changes under review (the uncommitted changes by default; `git diff <baseRef>` when a baseRef is given). Stay lightweight — you spawn subagents, track results, and report. You do no coding yourself. Reviewers are read-only; only fixers touch code.
 
 ## Input
 $ARGUMENTS
 
 `$ARGUMENTS` is optional and takes up to two file paths: `<plan> [spec]`.
+
+It also accepts an optional `baseRef=<git-ref>` token anywhere in the arguments: committed-range mode. The diff under review becomes `git diff <baseRef>` — the working tree vs that base — which covers committed work **plus** any later uncommitted fix edits (fix rounds re-diff against the same base). Callers such as the Ralph pipeline pass the feature branch's merge-base with main.
 
 - **Plan** (first path): the implementation contract — `SPEC/ACTIVE/NNNN-*/plan.md` (or the legacy `SPEC/PLAN/*.md`), or any `.md` with a `## Tasks` section. Defines this diff's scope and its per-task "Done when" gates.
 - **Spec** (second path): the source intent — `SPEC/FEATURE-REQUEST/`, `SPEC/REQUIREMENTS/`, or `SPEC/BUG-REPORT/*.md`. Used for intent-drift and out-of-scope checks only.
@@ -25,15 +27,17 @@ Execute these steps in order. Do not skip steps.
 
 ### Step 0: Resolve Input
 
-Parse `$ARGUMENTS` as up to two space-separated paths: first is the plan, second is the spec.
+Parse `$ARGUMENTS` as up to two space-separated paths (first is the plan, second is the spec), plus an optional `baseRef=<ref>` token.
 
 1. For each path provided, if it names a file that does not exist, **STOP**: "File not found: {path}".
 2. Set `{plan-file-path}` to the first path, or "(none — review changes on their own merits)" if absent. When absent, omit plan-specific instructions below.
 3. Set `{spec-file-path}` to the second path, or "(none)" if absent. When absent, omit spec-specific instructions below.
 
-Confirm there are uncommitted changes (`git status`). If the working tree is clean, **STOP**: "No uncommitted changes to review."
+If a `baseRef` was provided: verify it resolves (`git rev-parse --verify <baseRef>`; **STOP** if not: "Bad baseRef: {ref}") and confirm `git diff <baseRef>` is non-empty — if empty, **STOP**: "No changes vs {baseRef} to review." Otherwise confirm there are uncommitted changes (`git status`). If the working tree is clean, **STOP**: "No uncommitted changes to review."
 
 ### Step 1: Review
+
+When a `baseRef` is set, everywhere the reviewer and fixer prompts below say "the uncommitted changes", substitute "all changes since {baseRef} (committed and uncommitted)".
 
 Spawn a **reviewer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "opus"`:
 
@@ -48,7 +52,7 @@ Your value is adversarial analysis, NOT test execution. The implementor has alre
 
 ## Instructions
 1. {If a plan file exists:} Read the plan file — especially each task's "Done when" criteria. {If a spec file exists:} Read the spec's Acceptance Criteria, Edge Cases, and Out of Scope sections for the two intent checks above.
-2. Run `git diff` (and `git status` for untracked files; read new files in full). Read enough of the SURROUNDING code (callers, callees, siblings) to judge the change in context, not just the diff hunks in isolation.
+2. Run `git diff` — or, when a baseRef is set, `git diff {baseRef}` (working tree vs base) — (and `git status` for untracked files; read new files in full). Read enough of the SURROUNDING code (callers, callees, siblings) to judge the change in context, not just the diff hunks in isolation.
 3. Review critically from each of these angles. For every angle, state what you checked — don't skip silently:
    - **Correctness:** logic errors, off-by-one, inverted conditions, wrong operator, copy-paste mistakes.
    - **Edge cases:** empty/null/undefined inputs, zero/negative/huge values, missing keys, empty arrays, first/last iteration, concurrent access.
