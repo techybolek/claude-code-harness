@@ -1,7 +1,7 @@
 ---
 name: continue-dev
 description: Continue implementing tasks from SPEC/ACTIVE with extended thinking
-argument-hint: [optional task name to override auto-selection]
+argument-hint: [optional path to the task's context.md to override auto-selection]
 ---
 
 Resume work on active development tasks using extended thinking mode.
@@ -15,10 +15,12 @@ Scan for task folders in `SPEC/ACTIVE/`:
 ls -1 SPEC/ACTIVE/ 2>/dev/null | head -1
 ```
 
-If `$ARGUMENTS` contains a task name, use that instead of auto-selection.
+If `$ARGUMENTS` contains a path to a `context.md`, the task folder is that
+file's parent directory — use it instead of auto-selection. (A bare task
+folder name still works.)
 
 If no active tasks found, inform user:
-> No active tasks in `SPEC/ACTIVE/`. Use `/ralph:dev-docs` to create a new task.
+> No active tasks in `SPEC/ACTIVE/`. Use `/ralph:strategic-plan` to create a new task.
 
 ### Step 2: Read Task Documentation
 Read ALL three files in the task folder:
@@ -40,7 +42,7 @@ Before implementing, engage in deep analysis:
    registration, exports, navigation)? Create missing prerequisites first, or
    record them as a blocker in context.md.
 
-### Step 5: Implement
+### Step 4: Implement
 Work through incomplete tasks in order:
 
 1. Mark current task as in-progress in tasks.md
@@ -49,10 +51,7 @@ Work through incomplete tasks in order:
 4. Mark task complete when done
 5. Update context.md with progress
 
-### Step 6: Update Documentation
-As you work, keep SPEC docs current:
-
-### Step 6.5: Runtime Verification (REQUIRED)
+### Step 5: Runtime Verification (REQUIRED)
 
 Verify at the appropriate boundary — not per checkbox:
 
@@ -68,6 +67,9 @@ Verify at the appropriate boundary — not per checkbox:
 Never re-run the full test suite to verify a change a targeted test already covers.
 
 Use `[~]` for in-progress tasks, `[x]` only after the verification above.
+
+### Step 6: Update Documentation
+As you work, keep SPEC docs current:
 
 **context.md updates:**
 - SESSION PROGRESS section with today's date

@@ -37,6 +37,7 @@ state is on disk; a dropped terminal loses only live output, not progress.
 ~/.claude/scripts/ralph/
 ├── ralph-pipeline.sh    # uber script: setup → ralph.sh → review-flow-only → commit
 ├── ralph.sh             # the implement loop (usable standalone)
+├── lib.sh               # shared helpers (logging, task resolution, orphan reaping)
 ├── worktree-setup.sh    # worktree provisioning (usable standalone)
 ├── ralph-status.sh      # live peek at what the current iteration is doing
 ├── prompts/
@@ -59,35 +60,44 @@ allocates NNNN across SPEC/ACTIVE + SPEC/ARCHIVE.
 ### ralph-pipeline.sh — the uber script
 
 ```bash
-ralph-pipeline.sh [iterations]     # default 20
-ralph-pipeline.sh --task <spec>    # select spec when SPEC/ACTIVE/ has several
-ralph-pipeline.sh --skip-ralph     # review-only over the existing worktree
-                                   # (e.g. after manual fixes)
+ralph-pipeline.sh [iterations]       # default 20
+ralph-pipeline.sh --task <spec>      # select spec when SPEC/ACTIVE/ has several
+                                     # (<spec> = dir name or path to its context.md)
+ralph-pipeline.sh --skip-ralph       # review-only over the existing worktree
+                                     # (e.g. after manual fixes)
+ralph-pipeline.sh --skip-validation  # review without the validate stage
+                                     # (e.g. ralph already ran the full suite)
 ```
 
 Stages:
-1. Resolves the task: `--task <name>` / `RALPH_TASK=<name>`, else the single
+1. Resolves the task: `--task <spec>` / `RALPH_TASK=<spec>`, else the single
    `NNNN-*` dir in `SPEC/ACTIVE/` (multiple without `--task` is a hard error —
    never a silent lowest-number pick). Sources `project-config/<slug>.sh` if
    present.
 2. Runs `ralph.sh`. Exit 2 (max iterations) stops the pipeline **without**
    reviewing — rerun to continue. Exit ≠0/2 aborts.
 3. Runs `/review-flow-only` headlessly inside the worktree with
-   `{planPath, validationCommands}`; transcript →
-   `<worktree>/.runs/<task>/review_<timestamp>.log`.
-4. Commits the fixer's **tracked** changes on the ralph branch as
-   `fix(review): apply review-flow-only panel findings`. Untracked files
-   (fixer-created or hook artifacts — indistinguishable) are listed in the
-   final report for a manual decision, never auto-committed.
-5. Prints the review's final verdict + next steps.
+   `{planPath, baseRef (merge-base — reviews the committed branch work),
+   specPath (from plan.md's "Source spec:" header, if present), and
+   validationCommands or skipValidation}`; transcript →
+   `<worktree>/.runs/<task>/review_<timestamp>.log`. A run that ends without a
+   `REVIEW_VERDICT:` line is treated as killed mid-run — nothing is committed.
+4. Commits the whole reviewed state (`git add -A ':!.runs'` — tracked and
+   untracked alike, since the panel reviewed the full diff vs `baseRef`) as
+   `fix(review): apply review-flow-only panel findings`.
+5. Prints the review's final verdict + next steps. Triage-escalated plan
+   deviations are listed for a human ruling (exit 3) — the pipeline never
+   auto-fixes those.
 
-Exit codes: `0` implemented+reviewed · `2` max iterations, no review · `1` error.
+Exit codes: `0` implemented+reviewed · `2` max iterations, no review ·
+`3` reviewed, but plan deviations need a human ruling · `1` error.
 
 ### ralph.sh — the implement loop
 
 ```bash
 ralph.sh [iterations]   # default 20
 ralph.sh --task <spec>  # select spec when SPEC/ACTIVE/ has several (or RALPH_TASK env)
+                        # <spec> = dir name or a path to its context.md
 ralph.sh --dry-run | --status | --cleanup | --help
 ```
 

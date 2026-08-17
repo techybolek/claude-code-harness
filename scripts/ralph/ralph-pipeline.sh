@@ -16,8 +16,10 @@
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-validation  # review without the validate stage
 #                                             # (e.g. ralph already ran the full suite)
 #
-# Task selection: --task <name> or RALPH_TASK=<name>; otherwise SPEC/ACTIVE/
-# must contain exactly one NNNN- dir (multiple → hard error, never a silent pick).
+# Task selection: --task <spec> or RALPH_TASK=<spec>, where <spec> is the dir
+# name or a path to its context.md (e.g. SPEC/ACTIVE/0001-x/context.md);
+# otherwise SPEC/ACTIVE/ must contain exactly one NNNN- dir (multiple → hard
+# error, never a silent pick).
 #
 # Per-project review config (optional), sourced from
 # ~/.claude/scripts/ralph/project-config/<path-slug>.sh:
@@ -33,39 +35,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(pwd)"
 
-BLUE='\033[0;34m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-log_info() { echo -e "${BLUE}[PIPELINE]${NC} $1"; }
-log_success() { echo -e "${GREEN}[PIPELINE]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[PIPELINE]${NC} $1"; }
-log_error() { echo -e "${RED}[PIPELINE]${NC} $1"; }
-
-# Reap servers/watchers a review agent left running in the worktree (same leak
-# ralph.sh guards against: a verification `next dev` squatting port 3000 across
-# runs). Anything whose cwd is inside the worktree after the review session has
-# exited is a leak; interactive shells are spared (a user terminal cd'd there).
-kill_worktree_orphans() {
-    local worktree_path="$1"
-    local p pid cwd comm
-    for p in /proc/[0-9]*; do
-        pid="${p#/proc/}"
-        [ "$pid" = "$$" ] && continue
-        cwd=$(readlink "$p/cwd" 2>/dev/null) || continue
-        case "$cwd" in
-            "$worktree_path"|"$worktree_path"/*) ;;
-            *) continue ;;
-        esac
-        comm=$(cat "$p/comm" 2>/dev/null)
-        case "$comm" in bash|zsh|sh|fish|dash) continue ;; esac
-        if kill "$pid" 2>/dev/null; then
-            log_warn "Killed leftover process $pid ($comm) still running in the worktree"
-        fi
-    done
-    return 0
-}
+# Shared logging, task resolution and worktree helpers
+LOG_PREFIX="PIPELINE"
+source "$SCRIPT_DIR/lib.sh"
 
 SKIP_RALPH=0
 SKIP_VALIDATION=0
@@ -76,7 +48,7 @@ while [ $# -gt 0 ]; do
         --skip-validation) SKIP_VALIDATION=1 ;;
         --task)
             if [ $# -lt 2 ]; then
-                log_error "--task requires a value (spec dir name in SPEC/ACTIVE/)"
+                log_error "--task requires a value (spec dir name in SPEC/ACTIVE/, or a path to its context.md)"
                 exit 1
             fi
             RALPH_TASK="$2"
@@ -86,7 +58,9 @@ while [ $# -gt 0 ]; do
             RALPH_TASK="${1#--task=}"
             ;;
         --help|-h)
-            sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+            # Print the whole header comment block (a fixed line range goes
+            # stale every time the header grows)
+            awk 'NR>1 { if (/^#/) { sub(/^# ?/, ""); print } else exit }' "$0"
             exit 0
             ;;
         *)
@@ -102,30 +76,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# Same task-selection rules as ralph.sh: --task/RALPH_TASK wins; otherwise
-# exactly one NNNN- dir must be in SPEC/ACTIVE/ — several is a hard error,
-# never a silent lowest-number pick.
-CANDIDATES=$(ls -1 "$PROJECT_ROOT/SPEC/ACTIVE/" 2>/dev/null | grep -E '^[0-9]{4}-' | sort)
-if [ -n "${RALPH_TASK:-}" ]; then
-    if ! echo "$CANDIDATES" | grep -qxF "$RALPH_TASK"; then
-        log_error "Task '$RALPH_TASK' not found in SPEC/ACTIVE/. Available:"
-        echo "$CANDIDATES" | sed 's/^/  /'
-        exit 1
-    fi
-    TASK_DIR="$RALPH_TASK"
-else
-    COUNT=$(echo -n "$CANDIDATES" | grep -c . || true)
-    if [ "$COUNT" -eq 0 ]; then
-        log_error "No active tasks found in SPEC/ACTIVE/"
-        exit 1
-    fi
-    if [ "$COUNT" -gt 1 ]; then
-        log_error "Multiple tasks in SPEC/ACTIVE/ — select one with --task <name> (or RALPH_TASK env):"
-        echo "$CANDIDATES" | sed 's/^/  /'
-        exit 1
-    fi
-    TASK_DIR="$CANDIDATES"
-fi
+# Same task-selection rules as ralph.sh (shared resolve_active_task):
+# --task/RALPH_TASK wins; otherwise exactly one NNNN- dir in SPEC/ACTIVE/.
+TASK_DIR=$(resolve_active_task "$PROJECT_ROOT") || exit 1
 log_info "Task: $TASK_DIR"
 
 # Per-project review config (validation commands, model overrides)
@@ -259,7 +212,6 @@ if ! git diff --cached --quiet; then
 else
     log_info "Worktree already matches the reviewed state (nothing to commit)"
 fi
-UNTRACKED=$(git status --porcelain | grep '^??' | grep -v '^?? \.runs/' || true)
 popd > /dev/null
 
 # ---- Final report ------------------------------------------------------------
@@ -273,28 +225,11 @@ echo "  Branch:   ralph/$TASK_DIR"
 echo "  Worktree: $WORKTREE_PATH"
 echo ""
 echo "── Review verdict (final message) ─────────────"
-python3 - "$REVIEW_LOG" <<'EOF'
-import json, sys
-last = ""
-for line in open(sys.argv[1], errors="ignore"):
-    try:
-        e = json.loads(line)
-    except Exception:
-        continue
-    if e.get("type") == "assistant":
-        c = (e.get("message") or {}).get("content")
-        if isinstance(c, list):
-            t = " ".join(x.get("text", "") for x in c if x.get("type") == "text").strip()
-            if t:
-                last = t
-print(last or "(no final message found — inspect the review log)")
-EOF
+# FINAL_MSG is the session's result record — the same final assistant message
+# the old log-rescan reconstructed, and the REVIEW_VERDICT gate above already
+# proved it is present and complete.
+printf '%s\n' "$FINAL_MSG"
 echo "───────────────────────────────────────────────"
-if [ -n "$UNTRACKED" ]; then
-    echo ""
-    log_warn "Untracked files left in worktree (NOT committed — review manually):"
-    echo "$UNTRACKED"
-fi
 
 # Plan deviations: triage-escalated plan-vs-code conflicts the pipeline is NOT
 # allowed to auto-fix — they require a human ruling (amend the spec/plan, or

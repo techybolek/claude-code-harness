@@ -19,6 +19,9 @@
 
 set -e
 
+# Shared logging and worktree helpers
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
 PROJECT_ROOT="${1:-}"
 TASK_DIR="${2:-}"
 
@@ -30,20 +33,6 @@ fi
 WORKTREES_DIR="$PROJECT_ROOT/worktrees"
 BRANCH_NAME="ralph/${TASK_DIR}"
 WORKTREE_PATH="$WORKTREES_DIR/${TASK_DIR}"
-
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-NC='\033[0m'
-log_info() { echo -e "${BLUE}[INFO]${NC} $1" >&2; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
-
-# A worktree "exists" only if it is both registered AND live on disk (.git link
-# present) — a registration alone survives `rm -rf worktrees/` and would make us
-# skip creation, leaving later steps to run against a hollow directory that git
-# resolves to the MAIN repo.
-worktree_exists() {
-    git -C "$PROJECT_ROOT" worktree list | grep -q "$WORKTREE_PATH" && [ -f "$WORKTREE_PATH/.git" ]
-}
 
 # Detect and clear a stale registration (registered, but no valid checkout on disk).
 prune_stale_worktree() {
@@ -58,7 +47,7 @@ create_worktree() {
     mkdir -p "$WORKTREES_DIR"
     prune_stale_worktree
 
-    if worktree_exists; then
+    if worktree_exists "$PROJECT_ROOT" "$WORKTREE_PATH"; then
         log_info "Worktree already exists at $WORKTREE_PATH"
         return 0
     fi

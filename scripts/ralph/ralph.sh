@@ -14,8 +14,10 @@
 #   ~/.claude/scripts/ralph/ralph.sh --status        # Show current status
 #   ~/.claude/scripts/ralph/ralph.sh --cleanup       # Remove worktree and branch
 #
-# Task selection: --task <name> or RALPH_TASK=<name>; otherwise SPEC/ACTIVE/
-# must contain exactly one NNNN- dir (multiple → hard error, never a silent pick).
+# Task selection: --task <spec> or RALPH_TASK=<spec>, where <spec> is the dir
+# name or a path to its context.md (e.g. SPEC/ACTIVE/0001-x/context.md);
+# otherwise SPEC/ACTIVE/ must contain exactly one NNNN- dir (multiple → hard
+# error, never a silent pick).
 #
 # Prefer ralph-pipeline.sh for full runs (adds the code-review loop).
 # Full docs: ~/.claude/scripts/ralph/README.md
@@ -39,13 +41,6 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit INT TERM
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
 # Configuration
 PROJECT_ROOT="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,49 +49,13 @@ PROMPTS_DIR="$HOME/.claude/scripts/ralph/prompts"
 # model since CLI 2.1.219. Override per-run with RALPH_MODEL.
 RALPH_MODEL="${RALPH_MODEL:-claude-sonnet-5}"
 
+# Shared logging, task resolution and worktree helpers
+source "$SCRIPT_DIR/lib.sh"
+
 # Completion markers
 TASK_ITEM_DONE="<ralph>TASK_ITEM_DONE</ralph>"
 ALL_TASKS_DONE="<ralph>ALL_TASKS_DONE</ralph>"
 ERROR_STOP="<ralph>ERROR_STOP</ralph>"
-
-# Logging functions
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-
-# Resolve the task to work on. Explicit selection via --task / RALPH_TASK wins;
-# otherwise SPEC/ACTIVE/ must contain exactly ONE NNNN- dir — with several we
-# fail loudly instead of silently picking the lowest number.
-# Prints the task dir on stdout; on failure prints the reason to stderr and
-# outputs nothing (callers treat empty as "stop").
-find_active_task() {
-    local candidates count
-    candidates=$(ls -1 "$PROJECT_ROOT/SPEC/ACTIVE/" 2>/dev/null | grep -E '^[0-9]{4}-' | sort)
-
-    if [ -n "${RALPH_TASK:-}" ]; then
-        if echo "$candidates" | grep -qxF "$RALPH_TASK"; then
-            echo "$RALPH_TASK"
-        else
-            log_error "Task '$RALPH_TASK' not found in SPEC/ACTIVE/. Available:" >&2
-            echo "$candidates" | sed 's/^/  /' >&2
-        fi
-        return 0
-    fi
-
-    count=$(echo -n "$candidates" | grep -c . || true)
-    if [ "$count" -eq 0 ]; then
-        log_error "No active tasks found in SPEC/ACTIVE/ (need a NNNN- prefixed dir)" >&2
-        log_info "Create a task with /ralph:strategic-plan first" >&2
-        return 0
-    fi
-    if [ "$count" -gt 1 ]; then
-        log_error "Multiple tasks in SPEC/ACTIVE/ — select one with --task <name> (or RALPH_TASK env):" >&2
-        echo "$candidates" | sed 's/^/  /' >&2
-        return 0
-    fi
-    echo "$candidates"
-}
 
 # Worktrees directory (inside project, gitignored)
 WORKTREES_DIR="$PROJECT_ROOT/worktrees"
@@ -107,44 +66,16 @@ get_worktree_path() {
     echo "$WORKTREES_DIR/${task_name}"
 }
 
-# Check if worktree already exists
-# A worktree "exists" only if it is both registered AND live on disk (.git link
-# present) — a registration alone survives `rm -rf worktrees/` and would make us
-# skip creation, leaving later steps to run against a hollow directory that git
-# resolves to the MAIN repo.
-worktree_exists() {
-    local worktree_path="$1"
-    git -C "$PROJECT_ROOT" worktree list | grep -q "$worktree_path" && [ -f "$worktree_path/.git" ]
-}
-
 # Get branch name for a task
 get_branch_name() {
     echo "ralph/${1}"
 }
 
-# Agents sometimes leave servers running: a `next dev` started for verification
-# on 2026-08-15 survived its iteration and squatted port 3000 a day later. After
-# the iteration's claude exits, anything still running with its cwd inside the
-# worktree is a leak — kill it. Interactive shells are spared so a user terminal
-# cd'd into the worktree never dies.
-kill_worktree_orphans() {
+# Tools each iteration's agent may use — Write/Edit fenced to the worktree.
+# Single source of truth: main() passes this to claude, dry_run() prints it.
+build_allowed_tools() {
     local worktree_path="$1"
-    local p pid cwd comm
-    for p in /proc/[0-9]*; do
-        pid="${p#/proc/}"
-        [ "$pid" = "$$" ] && continue
-        cwd=$(readlink "$p/cwd" 2>/dev/null) || continue
-        case "$cwd" in
-            "$worktree_path"|"$worktree_path"/*) ;;
-            *) continue ;;
-        esac
-        comm=$(cat "$p/comm" 2>/dev/null)
-        case "$comm" in bash|zsh|sh|fish|dash) continue ;; esac
-        if kill "$pid" 2>/dev/null; then
-            log_warn "Killed leftover process $pid ($comm) still running in the worktree"
-        fi
-    done
-    return 0
+    echo "Write(${worktree_path}/**),Edit(${worktree_path}/**),Read(*),Glob(*),Grep(*),Bash(pytest:*),Bash(python -m pytest:*),Bash(ruff check:*),Bash(ruff format:*),Bash(npm test:*),Bash(npm run:*),Bash(npx:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*)"
 }
 
 # Build the agent prompt
@@ -223,21 +154,19 @@ print_summary() {
     local branch_name=$(get_branch_name "$task_dir")
     local progress_file="${worktree_path}/.runs/${task_dir}/ralph_progress.txt"
 
-    # Accumulate stats from progress file for this session
+    # Accumulate this session's stats from the JSONL progress file in one jq
+    # pass (jq is already a hard dependency; fromjson? skips malformed lines)
     local items_completed=0 tests_written=0 tests_passed=0 commits=""
     if [ -f "$progress_file" ]; then
-        while IFS= read -r line; do
-            [[ "$line" != *"\"session\": \"$session_id\""* ]] && continue
-            local ic tw tp cm
-            ic=$(echo "$line" | grep -oP '"items_completed":\s*\K[0-9]+' || true)
-            tw=$(echo "$line" | grep -oP '"tests_written":\s*\K[0-9]+' || true)
-            tp=$(echo "$line" | grep -oP '"tests_passed":\s*\K[0-9]+' || true)
-            cm=$(echo "$line" | grep -oP '"commit":\s*"\K[^"]+' || true)
-            [ -n "$ic" ] && items_completed=$((items_completed + ic))
-            [ -n "$tw" ] && tests_written=$((tests_written + tw))
-            [ -n "$tp" ] && tests_passed=$((tests_passed + tp))
-            [ -n "$cm" ] && commits="$cm"  # keep last commit
-        done < "$progress_file"
+        IFS=$'\t' read -r items_completed tests_written tests_passed commits < <(
+            jq -rRs --arg s "$session_id" '
+                [split("\n")[] | select(. != "") | (fromjson? // empty)
+                 | select(.session == $s)]
+                | [(map(.items_completed // 0) | add // 0),
+                   (map(.tests_written // 0) | add // 0),
+                   (map(.tests_passed // 0) | add // 0),
+                   ((map(.commit // empty) | last) // "")]
+                | @tsv' "$progress_file") || true
     fi
 
     echo ""
@@ -286,7 +215,7 @@ show_status() {
     log_info "Ralph Status"
     echo "============================================"
 
-    local task_dir=$(find_active_task)
+    local task_dir=$(resolve_active_task "$PROJECT_ROOT")
     [ -z "$task_dir" ] && return 1
 
     echo "Active task: $task_dir"
@@ -295,7 +224,7 @@ show_status() {
     local branch_name=$(get_branch_name "$task_dir")
 
     # Check worktree
-    if worktree_exists "$worktree_path"; then
+    if worktree_exists "$PROJECT_ROOT" "$worktree_path"; then
         echo "Worktree: $worktree_path (exists)"
     else
         echo "Worktree: $worktree_path (not created)"
@@ -324,7 +253,7 @@ show_status() {
 
 # Cleanup worktree and optionally branch
 cleanup() {
-    local task_dir=$(find_active_task)
+    local task_dir=$(resolve_active_task "$PROJECT_ROOT")
     [ -z "$task_dir" ] && return 1
 
     local worktree_path=$(get_worktree_path "$task_dir")
@@ -334,7 +263,7 @@ cleanup() {
 
     # Remove worktree (killing anything still running inside it first —
     # deleting a live server's cwd leaves it broken AND holding its port)
-    if worktree_exists "$worktree_path"; then
+    if worktree_exists "$PROJECT_ROOT" "$worktree_path"; then
         kill_worktree_orphans "$worktree_path"
         log_info "Removing worktree at $worktree_path"
         git -C "$PROJECT_ROOT" worktree remove --force "$worktree_path" 2>/dev/null || rm -rf "$worktree_path"
@@ -360,7 +289,7 @@ dry_run() {
     log_info "DRY RUN MODE"
     echo "============================================"
 
-    local task_dir=$(find_active_task)
+    local task_dir=$(resolve_active_task "$PROJECT_ROOT")
     [ -z "$task_dir" ] && return 1
 
     local branch_name=$(get_branch_name "$task_dir")
@@ -371,17 +300,7 @@ dry_run() {
     echo "Worktree path: $worktree_path"
     echo ""
     echo "Allowed tools would be:"
-    echo "  Write(${worktree_path}/**)"
-    echo "  Edit(${worktree_path}/**)"
-    echo "  Read(*)"
-    echo "  Glob(*)"
-    echo "  Grep(*)"
-    echo "  Bash(pytest:*)"
-    echo "  Bash(ruff:*)"
-    echo "  Bash(npm test:*) / Bash(npm run:*) / Bash(npx:*) / Bash(node:*)"
-    echo "  Bash(git status:*)"
-    echo "  Bash(git add:*)"
-    echo "  Bash(git commit:*)"
+    build_allowed_tools "$worktree_path" | tr ',' '\n' | sed 's/^/  /'
     echo ""
     echo "Task files:"
     ls -la "$PROJECT_ROOT/SPEC/ACTIVE/${task_dir}/" 2>/dev/null || echo "  (directory empty)"
@@ -407,8 +326,8 @@ main() {
     log_info "Max iterations: $max_iterations"
     echo ""
 
-    # Find active task (find_active_task reports failures on stderr)
-    local task_dir=$(find_active_task)
+    # Find active task (resolve_active_task reports failures on stderr)
+    local task_dir=$(resolve_active_task "$PROJECT_ROOT")
     [ -z "$task_dir" ] && exit 1
 
     log_info "Working on task: $task_dir"
@@ -425,7 +344,7 @@ main() {
     log_progress "$worktree_path" "$task_dir" "$session_id" "session_start" "Starting Ralph session with max $max_iterations iterations"
 
     # Build allowed tools restricted to worktree path
-    local allowed_tools="Write(${worktree_path}/**),Edit(${worktree_path}/**),Read(*),Glob(*),Grep(*),Bash(pytest:*),Bash(python -m pytest:*),Bash(ruff check:*),Bash(ruff format:*),Bash(npm test:*),Bash(npm run:*),Bash(npx:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*)"
+    local allowed_tools=$(build_allowed_tools "$worktree_path")
 
     # Main iteration loop
     local rejected_claims=0
@@ -567,7 +486,8 @@ while [ $# -gt 0 ]; do
             echo "Usage:"
             echo "  ~/.claude/scripts/ralph/ralph.sh [iterations]     Run for N iterations (default: 20)"
             echo "  ~/.claude/scripts/ralph/ralph.sh --task <spec>    Select spec when SPEC/ACTIVE/ has several"
-            echo "                                                    (env RALPH_TASK=<spec> also works)"
+            echo "                                                    (dir name or path to its context.md;"
+            echo "                                                     env RALPH_TASK=<spec> also works)"
             echo "  ~/.claude/scripts/ralph/ralph.sh --dry-run        Show what would happen"
             echo "  ~/.claude/scripts/ralph/ralph.sh --status         Show current status"
             echo "  ~/.claude/scripts/ralph/ralph.sh --cleanup        Remove worktree and branch"

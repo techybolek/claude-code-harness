@@ -80,33 +80,16 @@ Unlike rigid single-task agents, you have **autonomy to select the optimal workl
 3. **Logical Grouping**: Group related tasks that should be done together
 4. **Complexity Assessment**: Balance ambition with realistic completion
 
-### What You Can Select Per Iteration
-
-| Selection | When Appropriate |
-|-----------|------------------|
-| 1 task item | Complex task requiring deep focus |
-| 2-3 related tasks | Simple, related items (e.g., similar bug fixes) |
-| 1 full phase | When phase tasks are tightly coupled |
-| 2 phases | When phases are small and sequential |
+Scale the batch to complexity: one item when it needs deep focus, 2-3 related
+items or a full phase when they are simple or tightly coupled.
 
 ### Selection Process
 
 1. Review ALL incomplete `[ ]` items in tasks.md
 2. Assess complexity and dependencies
 3. Group related items if beneficial
-4. Declare your selection explicitly in output
+4. Declare your selection and rationale explicitly in output
 5. Complete ALL selected items before outputting completion marker
-
-**Example declaration:**
-```
-## This Iteration: Selected Tasks
-I'm selecting the following based on [priority/expertise/logical grouping]:
-- [ ] Task A (Phase 1) - reason
-- [ ] Task B (Phase 1) - reason (related to A)
-
-Business Goal: [What user outcome this achieves]
-Success Criteria: [How we'll know it's done]
-```
 
 ---
 
@@ -154,12 +137,15 @@ What user/system outcome does this achieve?
 2. Run the **Regression Scope declared in Phase 1** - impacted tests only, not the
    full suite. The full suite runs exactly ONCE per task, right before
    `ALL_TASKS_DONE`.
-3. **If any test fails -> ANALYZE and FIX immediately:**
+3. **If any test fails -> ANALYZE and FIX immediately** (a failing test caught
+   a real problem — that is the tests doing their job, never a reason to stop):
    - Read the test output carefully
    - Identify the root cause
    - Fix the implementation (not the test, unless test is wrong)
    - Re-run tests
    - Repeat until all tests pass
+   - Still failing after 3 attempts? Log detailed diagnostics and try a
+     different approach
 4. Only proceed to Phase 4.5 when ALL tests are green
 
 ### Phase 4.5: RUNTIME VERIFICATION
@@ -334,30 +320,6 @@ Add SESSION PROGRESS to `context.md`:
 
 ---
 
-## TEST FAILURE HANDLING
-
-When tests fail, Ralph **does not stop** - Ralph **fixes and continues**:
-
-### Fix Loop
-```
-TEST FAILS -> ANALYZE -> FIX -> RE-TEST -> (repeat until green)
-```
-
-### Fix Strategy
-1. **Read the error message** - What exactly failed?
-2. **Check the stack trace** - Where is the problem?
-3. **Review recent changes** - What did you just modify?
-4. **Fix the implementation** - Usually the code is wrong, not the test
-5. **Re-run tests** - Verify the fix worked
-6. **If still failing after 3 attempts** - Log detailed diagnostics, try different approach
-
-### When Tests Reveal Bugs
-- Tests are doing their job - they caught a problem!
-- This is GOOD - fix it now rather than shipping broken code
-- Document the bug and fix in the commit message
-
----
-
 ## FORBIDDEN ACTIONS
 
 - Skipping the test-first process (define -> test -> implement -> verify)
@@ -369,51 +331,6 @@ TEST FAILS -> ANALYZE -> FIX -> RE-TEST -> (repeat until green)
 - Modifying files outside task scope without explicit instruction
 - Running `git push` (user will push after review)
 - Archiving the task (user will archive after merge)
-
----
-
-## EXAMPLE SESSION FLOW
-
-1. **Startup:**
-   - `pwd` -> Confirm worktree: `worktrees/ralph-worktree-<name>/`
-   - `git branch` -> Confirm: `ralph/<task-name>`
-   - Read `.runs/<task-name>/ralph_progress.txt`, task docs
-   - Identify test runner (`npm test`) — no full-suite run at startup
-
-2. **Select:**
-   - Review all `[ ]` items
-   - Select: "Tasks 1, 2, 3 from Phase 1 - all related to API validation"
-   - Declare selection and rationale
-
-3. **Define (for each task):**
-   - Business goal: "Users get clear error messages on invalid input"
-   - Acceptance criteria: "400 response with error details"
-   - Test strategy: "Unit tests for validator, integration test for endpoint"
-
-4. **Test:**
-   - Write test_api_validation.py
-   - Run tests -> FAIL (expected, no implementation yet)
-
-5. **Implement:**
-   - /python-dev for Python best practices
-   - Write validation logic
-   - Run tests -> PASS
-
-6. **Verify:**
-   - New tests: PASS
-   - Regression: impacted specs pass (full suite deferred to `ALL_TASKS_DONE`)
-
-7. **Document:**
-   - tasks.md: Mark items `[x]`
-   - context.md: Add session progress
-   - `.runs/<task-name>/ralph_progress.txt`: Append JSONL
-
-8. **Commit:**
-   - `git add . && git commit -m "feat(api): add input validation with tests"`
-
-9. **Complete:**
-   - More items remain -> `<ralph>TASK_ITEM_DONE</ralph>`
-   - All done -> `<ralph>ALL_TASKS_DONE</ralph>`
 
 ---
 
