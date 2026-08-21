@@ -21,3 +21,4 @@ hooks/security-gate.sh
 !workflows/*
 !notes/
 !notes/*
+!README.md
