@@ -123,3 +123,11 @@ then `/ralph:ralph` or `/ralph:flow` to grind through them in fresh contexts.
 - Some commands assume my project conventions (`SPEC/ACTIVE/`, plan/spec file layout).
 - `notes/harness-tuning-log.md` is a lab notebook, not documentation — it records what I measured and
   what I changed, including the things that didn't work.
+
+---
+
+## Credits
+
+Shaped in part by [diet103/claude-code-infrastructure-showcase](https://github.com/diet103/claude-code-infrastructure-showcase)
+— examples of Claude Code infrastructure covering skill auto-activation, hooks, and agents. Worth a
+read if you're assembling a setup of your own.
