@@ -196,8 +196,9 @@ print_summary() {
 
     if [ "$final_status" = "complete" ] || [ "$final_status" = "max_iterations" ]; then
         echo "  Next steps:"
-        echo "    git log main..$branch_name"
-        echo "    gh pr create --base main --head $branch_name"
+        local base_branch=$(resolve_base_branch "$PROJECT_ROOT" || echo main)
+        echo "    git log ${base_branch}..$branch_name"
+        echo "    gh pr create --base ${base_branch} --head $branch_name"
         echo "    ~/.claude/scripts/ralph/ralph.sh --cleanup"
     fi
     if [ "$final_status" = "complete" ]; then
@@ -233,8 +234,9 @@ show_status() {
     # Check branch
     if git -C "$PROJECT_ROOT" show-ref --verify --quiet "refs/heads/$branch_name"; then
         echo "Branch: $branch_name (exists)"
-        local commits=$(git -C "$PROJECT_ROOT" rev-list --count main..$branch_name 2>/dev/null || echo "0")
-        echo "Commits ahead of main: $commits"
+        local base_branch=$(resolve_base_branch "$PROJECT_ROOT" || echo main)
+        local commits=$(git -C "$PROJECT_ROOT" rev-list --count "${base_branch}..$branch_name" 2>/dev/null || echo "0")
+        echo "Commits ahead of ${base_branch}: $commits"
     else
         echo "Branch: $branch_name (not created)"
     fi

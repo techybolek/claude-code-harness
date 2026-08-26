@@ -96,3 +96,20 @@ kill_worktree_orphans() {
     done
     return 0
 }
+
+# The branch a ralph/* branch was cut from. Hardcoding "main" silently produced
+# an empty merge-base on repos whose default branch is dev/master (TPV2,
+# 2026-08-25) — and an empty base ref downgrades the review to "uncommitted
+# changes only", which is nothing at all once ralph has committed every
+# iteration. Prefer origin/HEAD, else the first conventional name that exists.
+resolve_base_branch() {
+    local repo="$1" b c
+    b=$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+    if [ -z "$b" ]; then
+        for c in main master dev; do
+            if git -C "$repo" rev-parse --verify --quiet "$c" >/dev/null 2>&1; then b="$c"; break; fi
+        done
+    fi
+    [ -n "$b" ] || return 1
+    printf '%s\n' "$b"
+}

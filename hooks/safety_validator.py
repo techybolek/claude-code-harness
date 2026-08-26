@@ -12,15 +12,17 @@ Protected Against:
     - Recursive deletion of all files (rm -rf *)
     - Recursive deletion of home directory (rm -rf ~)
     - Disk wiping operations (dd if=/dev/zero)
-    - Access to environment files (.env, .env.local, .env.production, etc.)
+    - Access to environment files (.env, .env.production, etc.)
     - Access to secret files (.secret, .secret.local, etc.)
     - Access to SSH private keys (id_rsa, id_ed25519, id_ecdsa)
     - Access to credential files (.pem, credentials)
-    - Bash access to sensitive files (cat/head/tail/cp on .env, .secret, keys)
+    - Bash access to sensitive files (cat/head/tail/cp/less/more/bat on .env,
+      .secret, keys) - checked per argument, so a mixed command is blocked
 
 Exceptions:
     - Files ending with .example are allowed (safe template files)
     - e.g., .env.example, .secret.example can be read for structure reference
+    - .env.local is allowed (local dev overrides Claude is expected to edit)
 
 Exit Codes:
     0 - Tool use permitted (validation passed)
@@ -32,8 +34,37 @@ Integration:
 """
 
 import json
-import sys
+import os
 import re
+import shlex
+import sys
+
+# Path markers that identify a sensitive file
+SENSITIVE_MARKERS = [
+    r"\.env\b",
+    r"\.secret",
+    r"id_rsa",
+    r"id_ed25519",
+    r"id_ecdsa",
+    r"\.pem\b",
+    r"credentials",
+]
+
+# Suffixes that override the markers above
+ALLOWED_SUFFIXES = (".example", ".env.local")
+
+# Commands that read/copy file contents
+READER_COMMANDS = {"cat", "head", "tail", "cp", "less", "more", "bat"}
+
+# Shell tokens that end one command and start another
+SEGMENT_SEPARATORS = {"|", "||", "&&", ";", "&", "|&"}
+
+
+def is_sensitive_path(token):
+    """True if token looks like a sensitive file path and is not explicitly allowed."""
+    if token.endswith(ALLOWED_SUFFIXES):
+        return False
+    return any(re.search(m, token, re.IGNORECASE) for m in SENSITIVE_MARKERS)
 
 data = json.load(sys.stdin)
 tool_name = data.get("tool_name", "")
@@ -78,52 +109,40 @@ if tool_name == "Bash":
             print(f"BLOCKED: {description}", file=sys.stderr)
             sys.exit(2)
 
-    # Block Bash access to sensitive files (but allow .example files)
-    # First check if it's an .example file - those are safe
-    if not re.search(r"\.example\b", command, re.IGNORECASE):
-        sensitive_file_patterns = [
-            r"\bcat\s+.*\.env\b",
-            r"\bhead\s+.*\.env\b",
-            r"\btail\s+.*\.env\b",
-            r"\bcp\s+.*\.env\b",
-            r"\bcat\s+.*\.secret",
-            r"\bhead\s+.*\.secret",
-            r"\btail\s+.*\.secret",
-            r"\bcp\s+.*\.secret",
-            r"\bcat\s+.*id_rsa",
-            r"\bcat\s+.*id_ed25519",
-            r"\bcat\s+.*\.pem",
-            r"\bcat\s+.*credentials",
-        ]
+    # Block Bash access to sensitive files, argument by argument, so that an
+    # allowed path (.env.local) cannot smuggle a blocked one alongside it.
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
 
-        for pattern in sensitive_file_patterns:
-            if re.search(pattern, command, re.IGNORECASE):
-                print("BLOCKED: Cannot access sensitive file via Bash", file=sys.stderr)
+    segments, current = [], []
+    for token in tokens:
+        if token in SEGMENT_SEPARATORS:
+            segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    segments.append(current)
+
+    for segment in segments:
+        if not any(os.path.basename(t) in READER_COMMANDS for t in segment):
+            continue
+        for token in segment:
+            if is_sensitive_path(token):
+                print(
+                    f"BLOCKED: Cannot access sensitive file via Bash: {token}",
+                    file=sys.stderr,
+                )
                 sys.exit(2)
 
 # Block access to sensitive files
 if tool_name in ["Read", "Write", "Edit"]:
     file_path = tool_input.get("file_path", "")
 
-    # Allow .example files (they're safe templates without secrets)
-    if file_path.endswith(".example"):
-        sys.exit(0)
-
-    sensitive_patterns = [
-        ".env",
-        ".secret",
-        "id_rsa",
-        "id_ed25519",
-        "id_ecdsa",
-        ".pem",
-        "credentials",
-    ]
-
-    for blocked in sensitive_patterns:
-        if blocked in file_path:
-            print(
-                f"BLOCKED: Cannot modify sensitive file: {file_path}", file=sys.stderr
-            )
-            sys.exit(2)
+    # .example templates and .env.local are safe to touch
+    if is_sensitive_path(file_path):
+        print(f"BLOCKED: Cannot modify sensitive file: {file_path}", file=sys.stderr)
+        sys.exit(2)
 
 sys.exit(0)

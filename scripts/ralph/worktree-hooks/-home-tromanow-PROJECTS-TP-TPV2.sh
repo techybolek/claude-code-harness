@@ -39,10 +39,34 @@ done
 # fresh checkout is already correct. Copying it risks dirtying the worktree and
 # breaking ralph's clean-tree all_done guard.
 
+# playwright-cli config: the root checkout carries ignoreHTTPSErrors for the
+# self-signed (and currently expired) backend cert on https://localhost:5000,
+# but .playwright/ is gitignored — so a fresh worktree starts without it and
+# every browser-driving agent rediscovers ERR_CERT_AUTHORITY_INVALID as an
+# empty page. Conditional: absent at root is not a reason to abort the hook.
+if [[ -f "$ROOT/.playwright/cli.config.json" ]]; then
+    mkdir -p "$WT/.playwright"
+    cp "$ROOT/.playwright/cli.config.json" "$WT/.playwright/cli.config.json"
+else
+    echo "WARN: no $ROOT/.playwright/cli.config.json to propagate" >&2
+fi
+
+# SPEC/ is untracked in this repo, so it never reaches a worktree — but
+# ralph-pipeline.sh's review stage gates on
+# <worktree>/SPEC/ACTIVE/<task>/plan.md and exits 1 without it (no validate,
+# no panel, no fixer). Symlink, not copy: plan.md checkbox and progress edits
+# belong to the one main checkout, and the agent already writes there via the
+# absolute path when the worktree lookup misses.
+if [[ -d "$ROOT/SPEC" ]]; then
+    ln -sfn "$ROOT/SPEC" "$WT/SPEC"
+else
+    echo "WARN: no $ROOT/SPEC to link — pipeline review stage will fail" >&2
+fi
+
 # Guard: everything this hook placed must be ignored in the worktree,
 # else a .gitignore change could make a secret committable.
 for f in backend/.env frontend/e2e/.auth/admin-state.json tmp/fwa \
-         backend/node_modules frontend/node_modules; do
+         backend/node_modules frontend/node_modules .playwright SPEC; do
     [[ -e "$WT/$f" || -L "$WT/$f" ]] || continue
     git -C "$WT" check-ignore -q "$f" || { echo "ERROR: $f is not gitignored in worktree — refusing to leave it" >&2; rm -rf "$WT/$f"; exit 1; }
 done

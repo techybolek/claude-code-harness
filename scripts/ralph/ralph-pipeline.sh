@@ -11,12 +11,14 @@
 #
 # Usage:
 #   cd <project_root> && ~/.claude/scripts/ralph/ralph-pipeline.sh [iterations]
+#   ~/.claude/scripts/ralph/ralph-pipeline.sh <spec> [iterations]  # bare spec name
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh --task <spec>  # select spec when several are ACTIVE
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-ralph   # review-only, e.g. rerun
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-validation  # review without the validate stage
 #                                             # (e.g. ralph already ran the full suite)
 #
-# Task selection: --task <spec> or RALPH_TASK=<spec>, where <spec> is the dir
+# Task selection: a bare non-numeric positional, --task <spec>, or
+# RALPH_TASK=<spec>, where <spec> is the dir
 # name or a path to its context.md (e.g. SPEC/ACTIVE/0001-x/context.md);
 # otherwise SPEC/ACTIVE/ must contain exactly one NNNN- dir (multiple → hard
 # error, never a silent pick).
@@ -66,10 +68,12 @@ while [ $# -gt 0 ]; do
         *)
             if [[ "$1" =~ ^[0-9]+$ ]]; then
                 ITERATIONS="$1"
-            else
-                log_error "Unrecognized argument: '$1'"
-                log_error "The positional argument is the iteration count. To select a spec: --task $1"
+            elif [[ "$1" == -* ]]; then
+                log_error "Unrecognized option: '$1'"
                 exit 1
+            else
+                # Bare non-numeric positional = the spec (same as --task)
+                RALPH_TASK="$1"
             fi
             ;;
     esac
@@ -123,10 +127,17 @@ fi
 
 # Ralph agents commit every iteration — the review target is the committed
 # range (plus any later uncommitted fixer edits): working tree vs merge-base.
-BASE_REF=$(git -C "$WORKTREE_PATH" merge-base main HEAD 2>/dev/null || true)
+BASE_BRANCH=$(resolve_base_branch "$WORKTREE_PATH" || true)
+BASE_REF=""
+[ -n "$BASE_BRANCH" ] && BASE_REF=$(git -C "$WORKTREE_PATH" merge-base "$BASE_BRANCH" HEAD 2>/dev/null || true)
 if [ -z "$BASE_REF" ]; then
-    log_warn "merge-base main..HEAD failed in worktree — review falls back to uncommitted changes only"
+    # Never degrade to the uncommitted diff here: ralph commits every
+    # iteration, so that diff is empty and the panel would "PASS" on nothing.
+    log_error "Cannot resolve a base ref in the worktree (base branch: ${BASE_BRANCH:-none found})"
+    log_error "Review needs the committed range — refusing to review an empty diff."
+    exit 1
 fi
+log_info "Review base: $BASE_BRANCH ($BASE_REF)"
 
 # Source spec (intent authority above the plan): derived from plan.md's
 # "**Source spec:**" header so the triage gate can adjudicate plan-vs-code
