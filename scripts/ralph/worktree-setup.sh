@@ -87,6 +87,26 @@ setup_worktree_local_state() {
     fi
 }
 
+# Keep .runs/ out of git. The pipeline's own commit already excludes it by
+# pathspec (`git add -A -- ':!.runs'`), but the Ralph agent commits from inside
+# the worktree during iterations and those bypass that — 0007 shipped
+# .runs/<task>/SUMMARY.md and ralph_progress.txt into the feature branch as
+# "chore(ralph): ..." commits, polluting both the history and the review diff.
+# The exclusion goes in info/exclude, which is shared by every worktree of the
+# clone, rather than .gitignore: run artifacts are harness scaffolding, not a
+# product concern. Only untracked files are affected — anything already
+# committed still needs `git rm -r --cached .runs`.
+ensure_runs_excluded() {
+    local common_dir exclude_file
+    common_dir=$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+    exclude_file="$common_dir/info/exclude"
+    mkdir -p "$(dirname "$exclude_file")"
+    if ! grep -qxF '.runs' "$exclude_file" 2>/dev/null; then
+        printf '\n# ralph run artifacts (iteration logs, progress, SUMMARY.md)\n.runs\n' >> "$exclude_file"
+        log_info "Excluded .runs via $exclude_file"
+    fi
+}
+
 # Post-provision health check — fresh worktrees have repeatedly started broken
 # (0001: `Cannot find module 'chai'` ×4 because mocha ran before npm ci; 0002
 # session 1 had to rediscover `npm ci --legacy-peer-deps`). Findings go to
@@ -118,6 +138,7 @@ health_check() {
 }
 
 create_worktree
+ensure_runs_excluded
 setup_worktree_local_state
 health_check
 

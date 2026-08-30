@@ -14,8 +14,11 @@
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh <spec> [iterations]  # bare spec name
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh --task <spec>  # select spec when several are ACTIVE
 #   ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-ralph   # review-only, e.g. rerun
-#   ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-validation  # review without the validate stage
-#                                             # (e.g. ralph already ran the full suite)
+#   ~/.claude/scripts/ralph/ralph-pipeline.sh --validate <off|targeted|full>
+#                                             # off       = review only, no suites
+#                                             # targeted  = only what the diff can affect (DEFAULT)
+#                                             # full      = every configured command
+#   ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-validation  # alias for --validate off
 #
 # Task selection: a bare non-numeric positional, --task <spec>, or
 # RALPH_TASK=<spec>, where <spec> is the dir
@@ -42,12 +45,26 @@ LOG_PREFIX="PIPELINE"
 source "$SCRIPT_DIR/lib.sh"
 
 SKIP_RALPH=0
-SKIP_VALIDATION=0
+# Ralph runs the project's suites during implementation, so the review stage does
+# not re-run them wholesale: 'targeted' executes only what the diff can affect,
+# which keeps the runtime-verification value without the repeat cost.
+VALIDATE=targeted
 ITERATIONS=20
 while [ $# -gt 0 ]; do
     case "$1" in
         --skip-ralph) SKIP_RALPH=1 ;;
-        --skip-validation) SKIP_VALIDATION=1 ;;
+        --skip-validation) VALIDATE=off ;;
+        --validate)
+            if [ $# -lt 2 ]; then
+                log_error "--validate requires a value (off|targeted|full)"
+                exit 1
+            fi
+            VALIDATE="$2"
+            shift
+            ;;
+        --validate=*)
+            VALIDATE="${1#--validate=}"
+            ;;
         --task)
             if [ $# -lt 2 ]; then
                 log_error "--task requires a value (spec dir name in SPEC/ACTIVE/, or a path to its context.md)"
@@ -79,6 +96,11 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+case "$VALIDATE" in
+    off|targeted|full) ;;
+    *) log_error "--validate must be one of: off, targeted, full (got '$VALIDATE')"; exit 1 ;;
+esac
 
 # Same task-selection rules as ralph.sh (shared resolve_active_task):
 # --task/RALPH_TASK wins; otherwise exactly one NNNN- dir in SPEC/ACTIVE/.
@@ -148,17 +170,17 @@ if [ -n "$SPEC_PATH" ] && [ ! -f "$WORKTREE_PATH/$SPEC_PATH" ]; then
     SPEC_PATH=""
 fi
 
-REVIEW_ARGS=$(python3 - "$PLAN_PATH" "$SKIP_VALIDATION" "$BASE_REF" "$SPEC_PATH" "${VALIDATION_COMMANDS[@]+"${VALIDATION_COMMANDS[@]}"}" <<'EOF'
+REVIEW_ARGS=$(python3 - "$PLAN_PATH" "$VALIDATE" "$BASE_REF" "$SPEC_PATH" "${VALIDATION_COMMANDS[@]+"${VALIDATION_COMMANDS[@]}"}" <<'EOF'
 import json, sys
-plan, skip, base, spec, cmds = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
-args = {"planPath": plan}
+plan, validate, base, spec, cmds = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
+args = {"planPath": plan, "validate": validate}
 if base:
     args["baseRef"] = base
 if spec:
     args["specPath"] = spec
-if skip == "1":
-    args["skipValidation"] = True
-elif cmds:
+# Always pass the commands: in targeted/full mode they are the candidate set the
+# validator scopes down from. In 'off' mode the workflow ignores them.
+if cmds:
     args["validationCommands"] = cmds
 print(json.dumps(args))
 EOF
@@ -204,6 +226,19 @@ FINAL_MSG=$(grep '"type":"result"' "$REVIEW_LOG" | tail -1 | jq -r '.result // "
 if ! printf '%s' "$FINAL_MSG" | grep -q 'REVIEW_VERDICT:'; then
     log_error "Review session ended without a REVIEW_VERDICT line — the workflow was likely killed mid-run; NOT committing anything. See $REVIEW_LOG"
     exit 1
+fi
+
+# Findings report: the verdict otherwise survives only in terminal scrollback
+# and the multi-hundred-KB stream-json session log, so escalated plan deviations
+# became unreadable once the terminal closed. Written beside the plan; SPEC/ is
+# untracked here so it never dirties the worktree. Non-fatal by design.
+REPORT_PATH="$WORKTREE_PATH/SPEC/ACTIVE/${TASK_DIR}/review-findings.md"
+if printf '%s' "$FINAL_MSG" | python3 "$SCRIPT_DIR/write-review-report.py" \
+        "$REPORT_PATH" "$TASK_DIR" "ralph/$TASK_DIR" "${BASE_BRANCH:-?}" \
+        "$BASE_REF" "$(date '+%Y-%m-%d %H:%M:%S %Z')" > /dev/null 2>&1; then
+    log_info "Findings report: SPEC/ACTIVE/${TASK_DIR}/review-findings.md"
+else
+    log_warn "Could not write the findings report (continuing)"
 fi
 
 # ---- Stage 4: commit the reviewed state --------------------------------------
@@ -272,8 +307,10 @@ if [ -n "$DEVIATIONS" ]; then
     PIPELINE_RC=3
 fi
 echo ""
+echo "  Findings: SPEC/ACTIVE/$TASK_DIR/review-findings.md"
+echo ""
 echo "  Next steps:"
-echo "    git -C $PROJECT_ROOT log main..ralph/$TASK_DIR"
+echo "    git -C $PROJECT_ROOT log ${BASE_BRANCH}..ralph/$TASK_DIR"
 echo "    review, then merge and: ~/.claude/scripts/ralph/ralph.sh --cleanup"
 echo ""
 exit $PIPELINE_RC

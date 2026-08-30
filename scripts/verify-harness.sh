@@ -108,6 +108,57 @@ else
     ok "safety_validator.py blocks dangerous commands (live test)"
 fi
 
+# --- 7. live smoke test: next-task-number.sh resolves the project root -------
+# The executable-bit check above cannot catch the real failure mode: the script
+# used to take the root from $(pwd), so it silently returned 0001 from any
+# subdirectory instead of the project's next number. Build a throwaway repo and
+# assert root and subdir agree.
+nt_tmp=$(mktemp -d)
+(
+    cd "$nt_tmp"
+    git init -q .
+    mkdir -p SPEC/ACTIVE/0001-a SPEC/ACTIVE/0007-b sub/dir
+)
+nt_root=$(cd "$nt_tmp" && "$CLAUDE_DIR/scripts/next-task-number.sh" 2>/dev/null)
+nt_sub=$(cd "$nt_tmp/sub/dir" && "$CLAUDE_DIR/scripts/next-task-number.sh" 2>/dev/null)
+rm -rf "$nt_tmp"
+if [ "$nt_root" != "0008" ]; then
+    fail "next-task-number.sh returned '$nt_root' at the project root (expected 0008)" \
+         "inspect $CLAUDE_DIR/scripts/next-task-number.sh — its SPEC scan is broken"
+elif [ "$nt_sub" != "$nt_root" ]; then
+    fail "next-task-number.sh returned '$nt_sub' from a subdirectory but '$nt_root' at the root" \
+         "inspect resolve_project_root() in $CLAUDE_DIR/scripts/next-task-number.sh — it is not resolving the git root"
+else
+    ok "next-task-number.sh resolves the project root from any cwd (live test)"
+fi
+
+# --- 8. workflow scripts parse ------------------------------------------------
+# `node --check <file>.js` is USELESS here: it silently exits 0 on any .js
+# containing `export` (verified, node v24.16.0), which is every workflow script.
+# Parse them the way the runtime does instead — `export` stripped, body wrapped in
+# an async function so top-level await and return are legal.
+if command -v node >/dev/null 2>&1; then
+    wf_bad=0
+    wf_tmp=$(mktemp -d)
+    for wf in "$CLAUDE_DIR"/workflows/*.js; do
+        [ -f "$wf" ] || continue
+        {
+            echo "async function __wf(agent, parallel, pipeline, log, phase, workflow, args, budget) {"
+            sed 's/^export const meta/const meta/' "$wf"
+            echo "}"
+            echo "void __wf;"
+        } > "$wf_tmp/chk.mjs"
+        if ! err=$(node --check "$wf_tmp/chk.mjs" 2>&1); then
+            fail "workflow does not parse: $(basename "$wf")" "$(echo "$err" | grep -m1 SyntaxError || echo "run: node --check on the wrapped script")"
+            wf_bad=1
+        fi
+    done
+    rm -rf "$wf_tmp"
+    [ $wf_bad -eq 0 ] && ok "workflow scripts parse"
+else
+    warn "node not on PATH — workflow scripts not syntax-checked"
+fi
+
 echo ""
 if [ $FAILS -gt 0 ]; then
     echo "RESULT: $FAILS failure(s), $WARNS warning(s)"

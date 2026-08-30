@@ -82,7 +82,46 @@ As you work, keep SPEC docs current:
 - Add new discovered tasks if needed
 - Note in-progress work
 
-### Step 7: Checkpoint Protocol
+### Step 7: Commit the Phase
+
+Commit when a phase completes its Step 5 verification — not per checkbox, and
+never a single commit for the whole session. Conventional Commits format, one
+logical change per commit.
+
+Commit the source changes together with the `tasks.md` / `context.md` updates
+from Step 6, so the SPEC docs always describe the tree at that commit.
+
+Do NOT commit run artifacts (`.runs/`) — those are harness scaffolding. If they
+show up in `git status`, they are not excluded in this project; say so rather
+than committing or deleting them.
+
+### Step 8: Hand Off to Review
+
+Committed work is invisible to the uncommitted-diff reviewers
+(`/exec:review-loop`, `/exec:review-panel`) — they would report a clean PASS
+over an empty diff. The reviewer needs a **base ref** instead.
+
+Before finishing, print the exact invocation, with `<base>` resolved to the
+merge-base of the branch you worked on:
+
+```bash
+git merge-base "$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's|^origin/||')" HEAD
+```
+
+If your commits sit on a branch that already merged previously-reviewed work,
+use that merge commit as the base instead of the merge-base — the merge-base
+would re-review work the panel already passed. Say which you chose and why.
+
+```
+Workflow review-flow-only {
+  planPath: "SPEC/ACTIVE/<task>/plan.md",
+  specPath: "<the source spec, if there is one>",
+  baseRef:  "<base>",
+  validationCommands: [...]   # from the project's review config, if any
+}
+```
+
+### Step 9: Checkpoint Protocol
 Ask only before destructive or scope-changing decisions (deleting/significantly
 refactoring existing code, adding/removing dependencies). For everything else,
 decide and record the rationale in context.md.
