@@ -3,11 +3,11 @@
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "280000"
   },
   "includeCoAuthoredBy": false,
-  "model": "sonnet",
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Read|Write|Edit",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",

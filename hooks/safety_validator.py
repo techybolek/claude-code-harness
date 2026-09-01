@@ -4,33 +4,35 @@ Safety Validator Hook for Claude Code
 ======================================
 
 Purpose:
-    Pre-tool-use validation layer that blocks potentially destructive operations
-    before they execute. Acts as a safety gate for Bash, Read, Write, and Edit tools.
+    Pre-tool-use validation for Bash. Blocks a small set of commands that are
+    catastrophic and never intentional, and nothing else.
 
-Protected Against:
-    - Recursive deletion of root filesystem (rm -rf /)
-    - Recursive deletion of all files (rm -rf *)
-    - Recursive deletion of home directory (rm -rf ~)
-    - Disk wiping operations (dd if=/dev/zero)
-    - Access to environment files (.env, .env.production, etc.)
-    - Access to secret files (.secret, .secret.local, etc.)
-    - Access to SSH private keys (id_rsa, id_ed25519, id_ecdsa)
-    - Access to credential files (.pem, credentials)
-    - Bash access to sensitive files (cat/head/tail/cp/less/more/bat on .env,
-      .secret, keys) - checked per argument, so a mixed command is blocked
+Design:
+    Commands are tokenized and checked argument by argument. Nothing is matched
+    as a substring of the raw command line, so a path that merely *contains* a
+    dangerous string (rm -rf /home/me/node_modules, grep mkfs. docs/disk.md)
+    is not blocked.
 
-Exceptions:
-    - Files ending with .example are allowed (safe template files)
-    - e.g., .env.example, .secret.example can be read for structure reference
-    - .env.local is allowed (local dev overrides Claude is expected to edit)
+Blocked:
+    - Recursive rm whose target is the filesystem root, a top-level system
+      directory, the home directory, or a bare glob (/, /*, *, ~, $HOME, /etc, ...)
+    - dd / redirection writing to a block device (/dev/sda, /dev/nvme0n1, ...)
+    - mkfs invoked on a block device
+    - The classic fork bomb
+
+Not in scope:
+    Secret-file access is deliberately not gated here. The previous marker-based
+    check fired only on cat/head/Read/Write while sed, grep, awk, python, curl
+    and shell redirection walked straight past it, so it produced false
+    positives and lost turns without providing protection. Claude Code's own
+    permission prompts remain in force.
 
 Exit Codes:
-    0 - Tool use permitted (validation passed)
-    2 - Tool use blocked (dangerous operation detected)
+    0 - permitted
+    2 - blocked (message on stderr is shown to the model)
 
 Integration:
-    Configured as PreToolUse hook in .claude/settings.json
-    Receives tool call JSON via stdin from Claude Code
+    PreToolUse hook, matcher "Bash", in ~/.claude/settings.json
 """
 
 import json
@@ -39,110 +41,174 @@ import re
 import shlex
 import sys
 
-# Path markers that identify a sensitive file
-SENSITIVE_MARKERS = [
-    r"\.env\b",
-    r"\.secret",
-    r"id_rsa",
-    r"id_ed25519",
-    r"id_ecdsa",
-    r"\.pem\b",
-    r"credentials",
-]
+# Targets that mean "the whole filesystem", "everything here", or "my home".
+CATASTROPHIC_TARGETS = {
+    "/",
+    "*",
+    "~",
+    "$HOME",
+    "${HOME}",
+}
 
-# Suffixes that override the markers above
-ALLOWED_SUFFIXES = (".example", ".env.local")
+# Top-level directories that should never be removed recursively as a whole.
+SYSTEM_DIRS = {
+    "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/lib32", "/lib64",
+    "/opt", "/proc", "/root", "/run", "/sbin", "/srv", "/sys", "/usr", "/var",
+}
 
-# Commands that read/copy file contents
-READER_COMMANDS = {"cat", "head", "tail", "cp", "less", "more", "bat"}
+# Character devices that are safe sinks, unlike block devices.
+SAFE_DEVICES = {"/dev/null", "/dev/zero", "/dev/stdout", "/dev/stderr", "/dev/tty"}
 
-# Shell tokens that end one command and start another
-SEGMENT_SEPARATORS = {"|", "||", "&&", ";", "&", "|&"}
+BLOCK_DEVICE = re.compile(
+    r"^/dev/(sd[a-z]+\d*|nvme\d+n\d+(p\d+)?|hd[a-z]+\d*|vd[a-z]+\d*|xvd[a-z]+\d*"
+    r"|mmcblk\d+(p\d+)?|disk\d+.*|loop\d+)$"
+)
+
+# Shell tokens that end one command and start another.
+SEGMENT_SEPARATORS = {"|", "||", "&&", ";", "&", "|&", "(", ")", "{", "}"}
+
+# Wrappers to look through when identifying the command being run.
+WRAPPERS = {"sudo", "doas", "env", "time", "nohup", "command", "exec", "stdbuf"}
 
 
-def is_sensitive_path(token):
-    """True if token looks like a sensitive file path and is not explicitly allowed."""
-    if token.endswith(ALLOWED_SUFFIXES):
-        return False
-    return any(re.search(m, token, re.IGNORECASE) for m in SENSITIVE_MARKERS)
+def block(reason):
+    print(f"BLOCKED: {reason}", file=sys.stderr)
+    sys.exit(2)
 
-data = json.load(sys.stdin)
-tool_name = data.get("tool_name", "")
-tool_input = data.get("tool_input", {})
 
-# Block dangerous bash commands
-if tool_name == "Bash":
-    command = tool_input.get("command", "")
+def normalize_target(token):
+    """Strip trailing slashes and a trailing glob so /etc/ and /etc/* compare as /etc."""
+    token = re.sub(r"/\*+$", "", token)
+    token = token.rstrip("/")
+    return token or "/"
 
-    dangerous_patterns = [
-        # rm -rf variations: handles -rf, -r -f, --recursive --force, etc.
-        r"rm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+-[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*\s+-[a-zA-Z]*r[a-zA-Z]*|-[a-zA-Z]*rf[a-zA-Z]*|-[a-zA-Z]*fr[a-zA-Z]*|--recursive\s+--force|--force\s+--recursive)\s+/\s*$",
-        # rm -rf /* or rm -rf *
-        r"rm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+-[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*\s+-[a-zA-Z]*r[a-zA-Z]*|-[a-zA-Z]*rf[a-zA-Z]*|-[a-zA-Z]*fr[a-zA-Z]*|--recursive\s+--force|--force\s+--recursive)\s+(/\*)?\*",
-        # rm -rf ~ (home directory)
-        r"rm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+-[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*\s+-[a-zA-Z]*r[a-zA-Z]*|-[a-zA-Z]*rf[a-zA-Z]*|-[a-zA-Z]*fr[a-zA-Z]*|--recursive\s+--force|--force\s+--recursive)\s+~",
-        # rm -rf $HOME
-        r"rm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+-[a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*\s+-[a-zA-Z]*r[a-zA-Z]*|-[a-zA-Z]*rf[a-zA-Z]*|-[a-zA-Z]*fr[a-zA-Z]*|--recursive\s+--force|--force\s+--recursive)\s+\$HOME",
-        # dd disk operations
-        r"dd\s+.*if=/dev/(zero|random|urandom).*of=/dev/",
-        r"dd\s+.*of=/dev/[a-z]+\s",
-    ]
 
-    for pattern in dangerous_patterns:
-        if re.search(pattern, command, re.IGNORECASE):
-            print("BLOCKED: Dangerous command pattern detected", file=sys.stderr)
-            sys.exit(2)
+def is_catastrophic_target(token):
+    if token in CATASTROPHIC_TARGETS:
+        return True
+    normalized = normalize_target(token)
+    if normalized in CATASTROPHIC_TARGETS or normalized in SYSTEM_DIRS:
+        return True
+    # ./* and $HOME/* style bare wipes
+    return normalized in {".", "$HOME", "${HOME}", "~"}
 
-    # Additional simple checks for common dangerous patterns
-    dangerous_simple = [
-        ("rm -rf /", "recursive delete root"),
-        ("rm -rf /*", "recursive delete root contents"),
-        ("rm -rf ~", "recursive delete home"),
-        ("rm -rf $HOME", "recursive delete home"),
-        ("> /dev/sda", "overwrite disk"),
-        ("mkfs.", "format filesystem"),
-        (":(){ :|:& };:", "fork bomb"),
-    ]
 
-    for pattern, description in dangerous_simple:
-        if pattern in command:
-            print(f"BLOCKED: {description}", file=sys.stderr)
-            sys.exit(2)
+def split_segments(tokens):
+    segments, current = [], []
+    for token in tokens:
+        if token in SEGMENT_SEPARATORS:
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    if current:
+        segments.append(current)
+    return segments
 
-    # Block Bash access to sensitive files, argument by argument, so that an
-    # allowed path (.env.local) cannot smuggle a blocked one alongside it.
+
+def strip_wrappers(segment):
+    """Drop leading env assignments and wrapper commands (sudo, env, time, ...)."""
+    i = 0
+    while i < len(segment):
+        token = segment[i]
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", token):
+            i += 1
+        elif os.path.basename(token) in WRAPPERS:
+            i += 1
+        elif token.startswith("-"):
+            i += 1  # a flag belonging to the wrapper we just skipped
+        else:
+            break
+    return segment[i:]
+
+
+def check_rm(args):
+    """Block recursive rm whose target is root, a system dir, home, or a bare glob."""
+    recursive = False
+    targets = []
+    end_of_flags = False
+    for token in args:
+        if token == "--":
+            end_of_flags = True
+        elif not end_of_flags and token.startswith("--"):
+            if token in ("--recursive", "--dir"):
+                recursive = True
+        elif not end_of_flags and token.startswith("-") and len(token) > 1:
+            if "r" in token.lower():
+                recursive = True
+        else:
+            targets.append(token)
+
+    if not recursive:
+        return
+    for target in targets:
+        if is_catastrophic_target(target):
+            block(f"recursive delete of {target}")
+
+
+def check_dd(args):
+    for token in args:
+        if token.startswith("of="):
+            target = token[3:]
+            if target not in SAFE_DEVICES and BLOCK_DEVICE.match(target):
+                block(f"dd writing to block device {target}")
+
+
+def check_mkfs(args):
+    for token in args:
+        if BLOCK_DEVICE.match(token):
+            block(f"format filesystem on {token}")
+
+
+def check_redirections(tokens):
+    """Block `> /dev/sda` and friends."""
+    for i, token in enumerate(tokens):
+        target = None
+        if token in (">", ">>"):
+            target = tokens[i + 1] if i + 1 < len(tokens) else None
+        elif token.startswith(">") and len(token) > 1:
+            target = token.lstrip(">")
+        if target and target not in SAFE_DEVICES and BLOCK_DEVICE.match(target):
+            block(f"overwrite block device {target}")
+
+
+def main():
+    try:
+        data = json.load(sys.stdin)
+    except (ValueError, OSError):
+        sys.exit(0)  # fail open: a broken payload should not stall the session
+
+    if data.get("tool_name") != "Bash":
+        sys.exit(0)
+
+    command = data.get("tool_input", {}).get("command", "")
+
+    if re.sub(r"\s+", "", command).find(":(){:|:&};:") != -1:
+        block("fork bomb")
+
     try:
         tokens = shlex.split(command)
     except ValueError:
         tokens = command.split()
 
-    segments, current = [], []
-    for token in tokens:
-        if token in SEGMENT_SEPARATORS:
-            segments.append(current)
-            current = []
-        else:
-            current.append(token)
-    segments.append(current)
+    check_redirections(tokens)
 
-    for segment in segments:
-        if not any(os.path.basename(t) in READER_COMMANDS for t in segment):
+    for segment in split_segments(tokens):
+        args = strip_wrappers(segment)
+        if not args:
             continue
-        for token in segment:
-            if is_sensitive_path(token):
-                print(
-                    f"BLOCKED: Cannot access sensitive file via Bash: {token}",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
+        name = os.path.basename(args[0])
+        rest = args[1:]
+        if name == "rm":
+            check_rm(rest)
+        elif name == "dd":
+            check_dd(rest)
+        elif name == "mkfs" or name.startswith("mkfs."):
+            check_mkfs(rest)
 
-# Block access to sensitive files
-if tool_name in ["Read", "Write", "Edit"]:
-    file_path = tool_input.get("file_path", "")
+    sys.exit(0)
 
-    # .example templates and .env.local are safe to touch
-    if is_sensitive_path(file_path):
-        print(f"BLOCKED: Cannot modify sensitive file: {file_path}", file=sys.stderr)
-        sys.exit(2)
 
-sys.exit(0)
+if __name__ == "__main__":
+    main()
