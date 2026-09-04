@@ -5,16 +5,24 @@
 ## Core Principles
 
 ### KISS (Keep It Simple, Stupid)
+Complexity is paid for on every future read, not just at write time.
 - Choose the simplest solution that works
 - One function = one responsibility
 - If it's hard to explain, it's too complex
 
 ### YAGNI (You Aren't Gonna Need It)
+Speculative code is never exercised, so it rots silently and misleads whoever reads it next. Commented-out code is the same problem plus noise — git already has the history.
 - No speculative features or "just in case" code
 - Delete unused code immediately - don't comment it out
 
 ### Be concise
 In all interactions be extremely concise and prioritize brevity over style.
+
+### Document length
+Match the length of written documents — specs, plans, reports, summaries — to what the task actually needs. Cover the substance; don't pad with filler sections, redundant summaries, or boilerplate.
+
+### Delegation
+Delegate to a subagent only for large tracks of work that are genuinely independent and parallelizable. Don't delegate what you can finish in a handful of tool calls, and don't use a subagent to verify or double-check your own work. Commands that define their own orchestration pattern (`exec/*`, `ralph/*`) override this.
 
 ### Atomic Tests
 - One test = one behavior/scenario

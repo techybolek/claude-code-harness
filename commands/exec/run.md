@@ -27,7 +27,7 @@ Execute these steps in order. Do not skip steps.
    - **chore**: describes refactoring, cleanup, migration, maintenance
    - **feature**: everything else (default)
 2. Read the corresponding plan command: `~/.claude/commands/plan/{type}.md`
-3. Spawn a **planner subagent** via the Agent tool with `model: "opus"`. Give it the full plan command content with `$ARGUMENTS` replaced by the spec file content.
+3. Spawn a **planner subagent** via the Agent tool with `model: "claude-opus-5"`. Give it the full plan command content with `$ARGUMENTS` replaced by the spec file content.
 4. Extract the plan file path from the planner's Report section.
 5. If no plan file path, **STOP**: "Planner did not produce a plan file."
 6. Print: `Plan created: {plan-file-path}`

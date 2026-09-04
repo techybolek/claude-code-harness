@@ -43,7 +43,7 @@ If a `baseRef` was provided: verify it resolves (`git rev-parse --verify <baseRe
 
 When a `baseRef` is set, everywhere the reviewer and fixer prompts below say "the uncommitted changes", substitute "all changes since {baseRef} (committed and uncommitted)".
 
-Spawn a **reviewer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "opus"`:
+Spawn a **reviewer subagent** via the Agent tool with `subagent_type: "general-purpose"` and `model: "claude-opus-5"`:
 
 ```
 Critically review the uncommitted changes{ implementing the plan at {plan-file-path}}.
