@@ -1,5 +1,4 @@
 ---
-name: discovery
 description: Start or resume the Discovery-to-PRD pipeline
 argument-hint: [--description "<text>"] [--resume <phase>] [--project <name>]
 ---
@@ -8,52 +7,58 @@ Run the Discovery Pipeline to transform ideas into Product Requirements Document
 
 ## What This Does
 
-Executes a 5-phase discovery pipeline:
+A 5-phase pipeline:
 
-1. **Interview** (Interactive): Socratic questioning to understand requirements
-2. **Research** (Autonomous): Web search to validate and expand findings
-3. **Synthesis** (Autonomous): Combine into structured PRD draft
-4. **Review** (Autonomous): Adversarial critical review with lens scoring
-5. **Consolidation** (Autonomous): Synthesize review into final PRD
+1. **Interview** (Interactive, this session): Socratic questioning to understand requirements
+2. **Research** (Autonomous, Workflow tool): Web search to validate and expand findings
+3. **Synthesis** (Autonomous, Workflow tool): Combine into structured PRD draft
+4. **Review** (Autonomous, Workflow tool): Adversarial critical review with lens scoring
+5. **Consolidation** (Autonomous, Workflow tool): Synthesize review into final PRD
 
-Each phase runs in isolation with fresh context.
+Phase 1 is a live conversation with you and runs in this session. Phases 2-5
+run as one fresh-context agent each inside a single background Workflow run
+(`~/.claude/workflows/discovery-flow.js`) — same architecture as
+`/ralph:flow`'s implement loop.
 
 ## Usage
 
 **Start new discovery:**
 ```bash
-/ralph:discovery
+/spec:advanced-discovery
 ```
 You will be prompted for a description of what you want to build. The project name is auto-derived from your description.
 
 **Start with inline description:**
 ```bash
-/ralph:discovery -d "A mobile app for tracking personal expenses"
+/spec:advanced-discovery -d "A mobile app for tracking personal expenses"
 ```
 Seeds the interview with this description as context — the Socratic interview still runs interactively.
 
 **Start with a file as input:**
 ```bash
-/ralph:discovery /path/to/brief.txt
+/spec:advanced-discovery /path/to/brief.txt
 ```
 Reads the file and uses its contents as the starting context for the Socratic interview — the interview still runs interactively.
 
 **Resume from specific phase:**
 ```bash
-/ralph:discovery --resume research
-/ralph:discovery --resume synthesis
-/ralph:discovery --resume review
-/ralph:discovery --resume consolidation
+/spec:advanced-discovery --resume research
+/spec:advanced-discovery --resume synthesis
+/spec:advanced-discovery --resume review
+/spec:advanced-discovery --resume consolidation
 ```
+Resuming skips the interview entirely and goes straight to launching the
+Workflow at that phase — use this after a `blocked`/`agent_error` outcome, or
+to redo a later phase without repeating the interview.
 
 **Start with project name:**
 ```bash
-/ralph:discovery --project mobile-checkout
+/spec:advanced-discovery --project mobile-checkout
 ```
 
 **List phases:**
 ```bash
-/ralph:discovery --list
+/spec:advanced-discovery --list
 ```
 
 ## Output Location
@@ -77,10 +82,10 @@ Display the phase list from "What This Does" section above. Do NOT run any phase
 - If `--resume` is used without `--project`: list `SPEC/DISCOVERY/` subdirectories and use the most recently modified one, or ask the user if ambiguous
 
 ### If `--resume <phase>` is present:
-Resolve the project name (see above), then run the autonomous phases starting from `<phase>` through consolidation using the **Autonomous Phase Execution** process below.
+Resolve the project name (see above), then skip straight to **Launch the Workflow** below with `startPhase: "<phase>"`.
 
 ### Otherwise (new discovery - NO --resume flag):
-**Handle Phase 1 directly, then auto-continue with autonomous phases.**
+**Run Phase 1 directly in this session, then launch the Workflow at `research`.**
 
 1. **Get initial context:**
    - If `$ARGUMENTS` is a file path (starts with `/` or `./`, or ends with a file extension like `.txt`, `.md`): read the file and use its contents as the **starting context** for the interview
@@ -92,6 +97,11 @@ Resolve the project name (see above), then run the autonomous phases starting fr
 2. **Derive project name:**
    - Create a kebab-case name from the context (2-4 words, lowercase)
    - If `--project` provided, use that instead
+   - **Sanitize before use (applies to both):** the name must match `^[a-z0-9][a-z0-9-]*$`.
+     Lowercase it, replace any run of other characters with a single `-`, and strip
+     leading/trailing `-`. If nothing survives, ask the user for a name. This name
+     becomes a directory path and is interpolated into every workflow path — a space,
+     slash, or `..` breaks the run.
 
 3. **Create output directory:**
    ```bash
@@ -114,57 +124,29 @@ Resolve the project name (see above), then run the autonomous phases starting fr
    Write the completed discovery document to: `SPEC/DISCOVERY/<project-name>/01-interview.md`
    Only do this AFTER the interview conversation is complete and the user has confirmed the summary.
 
-6. **AUTO-CONTINUE with autonomous phases:**
-   Run phases 2–5 sequentially using the **Autonomous Phase Execution** process below, starting from `research`.
+6. **Launch the Workflow at `research`** (see below).
 
 ---
 
-## Autonomous Phase Execution
+## Launch the Workflow
 
-Run each phase in order: **research -> synthesis -> review -> consolidation**
+Invoke the Workflow tool with `scriptPath: ~/.claude/workflows/discovery-flow.js` and
+`args: { projectRoot: "$PWD", projectName: "<project-name>", startPhase: "<research|synthesis|review|consolidation>" }`.
 
-For each phase:
+It runs in the background: wait for the completion notification. Do not poll,
+and never report results before the notification arrives.
 
-1. **Skip** if the output file already exists (phase already completed)
-2. **Read** the phase prompt file listed in the table below
-3. **Read** all input files listed for that phase from `SPEC/DISCOVERY/<project-name>/`
-4. **Invoke the Agent tool** with a prompt built as follows:
+### Act on the outcome (the workflow's return value):
 
-```
-# Discovery Pipeline - Phase N: <phase-name>
-
-## Project: <project-name>
-## Output File: SPEC/DISCOVERY/<project-name>/<output-file>
-
-IMPORTANT: When you complete this phase, save your output to the file above using the Write tool.
-
----
-
-## Input Documents
-
-### <input-filename>
-```markdown
-<contents of input file>
-```
-
-[repeat for each input]
-
----
-
-## Phase Instructions
-
-<full contents of the phase prompt file>
-```
-
-5. **Verify** the output file exists after the agent completes before proceeding to the next phase. If missing, report the failure and stop.
-
-### Phase Reference
-
-| Phase | Prompt File | Input Files | Output File |
-|-------|-------------|-------------|-------------|
-| research | PHASE_2_RESEARCH.md | 01-interview.md | 02-research.md |
-| synthesis | PHASE_3_SYNTHESIS.md | 01-interview.md, 02-research.md | 03-prd-draft.md |
-| review | PHASE_4_REVIEW.md | 03-prd-draft.md, 01-interview.md, 02-research.md | 04-prd-review.md |
-| consolidation | PHASE_5_CONSOLIDATION.md | 03-prd-draft.md, 04-prd-review.md | 05-prd-final.md |
-
-All prompt files are in: `~/.claude/scripts/discovery_agent/prompts/`
+- **`done`** — guard first: confirm `SPEC/DISCOVERY/<project-name>/05-prd-final.md`
+  exists (`ls`). If missing, treat as incomplete and say so rather than
+  reporting success. Otherwise tell the user the PRD is ready and where it lives.
+- **`blocked`** — report `blockedReason` verbatim plus `failedPhase`. After the
+  user resolves it: `/spec:advanced-discovery --project <project-name> --resume <failedPhase>`.
+  Exception: if `blockedReason` names a missing input file, the phase that *produces*
+  that file is the one that failed — resume there instead, or resuming `<failedPhase>`
+  just blocks again.
+- **`agent_error`** — a phase agent died twice in a row (likely a transient API
+  issue). Tell the user to re-run with `--resume <failedPhase>` once the API is healthy.
+- **`FAILED`** — bad args reached the workflow; this indicates a bug in this
+  command's launch step, not the pipeline itself. Report the `reason` verbatim.
