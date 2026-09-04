@@ -5,6 +5,8 @@
 !.gitattributes
 !commands/
 !commands/**
+!commands-archive/
+!commands-archive/**
 !skills/
 !skills/**
 skills/playwright-cli/
