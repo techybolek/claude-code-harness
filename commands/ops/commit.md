@@ -1,28 +1,38 @@
 # Generate Git Commit
 
-Based on the `Instructions` below, take the `Variables` follow the `Run` section to create a git commit with a properly formatted message. Then follow the `Report` section to report the results of your work.
+Create one git commit for the current change, with a Conventional Commits message.
 
-## Instructions
+## Message
 
-- Generate a concise commit message in the format: `<issue_class>: <commit message>`
-- The `<commit message>` should be:
-  - Present tense (e.g., "add", "fix", "update", not "added", "fixed", "updated")
-  - 50 characters or less
-  - Descriptive of the actual changes made
-  - No period at the end
-- Examples:
-  - `feat: add user authentication module`
-  - `fix: login validation error`
-  - `chore: update dependencies to latest versions`
-- Extract context from the changes to make the commit message relevant
+```
+<type>(<scope>): <description>
+
+[optional body]
+```
+
+- `type`: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `build`, `ci`, `style`.
+- `scope`: optional — the area touched (module, package, command), e.g. `feat(auth): …`. Omit it when the change spans no single area.
+- `description`: imperative present tense ("add", not "added"), lowercase, no trailing period, ≤ 72 chars for the whole first line.
+- Body: only when the *why* isn't obvious from the description — 1–3 short lines, wrapped at 72. No file lists, no restating the diff.
+- Breaking change: `!` after the type/scope and a `BREAKING CHANGE:` footer.
+- Follow the repo's own convention if `git log --oneline -10` shows a different one.
 
 ## Run
 
-1. Run `git status` and `git diff HEAD` to understand all changes (both tracked modifications and untracked files)
-2. Stage all changes: run `git add -A` to stage everything. If `git add -A` fails (e.g. due to special files), fall back to staging explicitly: `git add <specific files and directories>`
-3. Before committing, run `git status` to verify that ALL changed and untracked files are staged. If any are missing, stage them individually.
-4. Run `git commit -m "<generated_commit_message>"` to create the commit
+1. `git status`, `git diff HEAD`, and `git log --oneline -10`.
+2. Stage:
+   - Something already staged → commit exactly that; don't add more.
+   - Nothing staged → stage the files that belong to this change by name (`git add <paths>`), never `git add -A`. Leave out unrelated edits, secrets/credentials (`.env`, keys), local config, and build/generated output.
+   - If the changes are clearly several unrelated changes, stage only the main one and name the rest in the report.
+3. `git diff --cached --stat` to confirm what's staged.
+4. Commit (use a heredoc for a multi-line message):
+   ```bash
+   git commit -F - <<'EOF'
+   <message>
+   EOF
+   ```
+   If a pre-commit hook fails: fix it and recommit when the cause is in the staged change, otherwise stop and report it. Never `--no-verify`.
 
 ## Report
 
-Return ONLY the commit message that was used (no other text)
+The commit message used. If any changed files were left unstaged, one more line: `Not committed: <files>`.
