@@ -27,6 +27,9 @@ run-flow did well (plan review, parallel waves, write-time hardening).
 - `ralph/ralph.md` — `/ralph:ship` / `/ralph:flow` replaced the bash loop as the entry
   point. `scripts/ralph/ralph.sh` and `ralph-pipeline.sh` stay for terminal use and
   `ralph.sh --cleanup`; `/ralph:flow` now reviews via `review-flow-only` directly.
+- `plan/bug.md` — last of the `### T{N}` planners (siblings archived 09-04); no executor
+  reads its output. Bugs go `/spec:bug-report` → `/ralph:ship`; its regression-test and
+  surgical-fix rules moved into `ralph/strategic-plan.md`.
 
 To restore one:
 

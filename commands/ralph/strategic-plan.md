@@ -39,6 +39,7 @@ You are an elite strategic planning specialist. Create a comprehensive, actionab
    - Include clear acceptance criteria for each task (backend endpoint AC = a targeted test passes, e.g. mocha — never live-URL probe steps)
    - Specify dependencies between tasks
    - Estimate effort levels (S/M/L/XL)
+   - **Bug fixes** (e.g. a `SPEC/BUG-REPORT/` spec): confirm the root cause in the code before planning, keep the fix surgical (root cause, minimal change, no scope creep), and make the first task a regression test that reproduces the bug — it must fail before the fix and pass after
 
 7. **Create task management structure**:
    - Create directory: `SPEC/ACTIVE/NNNN-[task-name]/` where NNNN is from step 1
