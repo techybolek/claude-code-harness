@@ -7,9 +7,9 @@ model: sonnet
 
 > **Lockstep note (for editors, not executors):** code-review policy is duplicated across files that must be edited together.
 >
-> - **Reviewer policy (still fully shared):** this file's Step 1 prompt, `review-panel.md` (lenses + codex wrapper), and the REALISM_RULE / severity-floor copies in `~/.claude/workflows/run-review-flow.js` and `~/.claude/workflows/review-flow-only.js`. A change landed in only some of them means the workflow and standalone paths review to different standards.
-> - **Fixer policy (diverged 2026-08-27):** `run-review-flow.js` still has the two-seat shape this file describes — a sonnet triage gate, then a sonnet fixer bound to Step 2 below. `review-flow-only.js` replaced both with ONE opus adjudicator that holds judgement and repair together, and it **no longer delegates to Step 2** — its prompt is self-contained, adding a `DECLINE` bucket (real, but fixing not warranted) that has no equivalent here. Do not assume an edit to Step 2 reaches it.
-> - Plan-review policy has the same split: `plan-review.md` + `run-review-flow.js`.
+> - **Reviewer policy (still fully shared):** this file's Step 1 prompt, `review-panel.md` (lenses + codex wrapper), and the REALISM_RULE / severity-floor copies in `~/.claude/workflows/review-flow-only.js`. A change landed in only some of them means the workflow and standalone paths review to different standards.
+> - **Fixer policy (diverged 2026-08-27):** this file describes the two-seat shape — a sonnet triage gate, then a sonnet fixer bound to Step 2 below. `review-flow-only.js` replaced both with ONE opus adjudicator that holds judgement and repair together, and it **no longer delegates to Step 2** — its prompt is self-contained, adding a `DECLINE` bucket (real, but fixing not warranted) that has no equivalent here. Do not assume an edit to Step 2 reaches it.
+> - `run-review-flow.js` (the last consumer of the two-seat shape and of `plan-review.md`) was archived 2026-09-18 → `commands-archive/workflows/`.
 
 You are an orchestrator. Your job is to run an automated review→fix loop on the changes under review (the uncommitted changes by default; `git diff <baseRef>` when a baseRef is given). Stay lightweight — you spawn subagents, track results, and report. You do no coding yourself. Reviewers are read-only; only fixers touch code.
 

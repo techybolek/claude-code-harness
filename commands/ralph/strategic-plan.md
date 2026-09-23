@@ -43,7 +43,7 @@ You are an elite strategic planning specialist. Create a comprehensive, actionab
 7. **Create task management structure**:
    - Create directory: `SPEC/ACTIVE/NNNN-[task-name]/` where NNNN is from step 1
    - Generate three files:
-     - `plan.md` - The comprehensive plan
+     - `plan.md` - The comprehensive plan. When the request is a spec file, its first line after the title is ``**Source spec:** `<path relative to the project root>` `` — `/ralph:ship` and the review stage resolve the spec from it
      - `context.md` - Key files, decisions, dependencies, environment prerequisites (DB/services that must be up, integration points)
      - `tasks.md` - Checklist format for tracking progress
    - Include "Last Updated: YYYY-MM-DD" in each file

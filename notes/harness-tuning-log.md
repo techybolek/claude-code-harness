@@ -6,6 +6,19 @@ Rolling log of reviewer/panel evaluations and the harness changes they produced.
 
 ---
 
+## 2026-09-18 — /ralph:ship: single kickoff, run-flow archived
+
+**Trigger:** retro of the 2026-09-17 czub-subscription day (0004 decouple-admin-identity). The chain that actually ran was design chat → spec → `/ralph:strategic-plan` → `/ralph:continue-dev` in the interactive session (2 compactions, 75 min tree lock) → three concurrent chats in the same working tree → a wrong `exec:review-panel` launch corrected to `review-flow-only`, which then swallowed an unrelated purge commit as plan deviation #8 and ended UNRESOLVED on a transient codex outage.
+
+**Findings:** `exec:run-flow` spec mode was dead — its planner delegated to `plan/feature.md`/`plan/chore.md` (archived 09-04) and `parse-plan.cjs` rejects strategic-plan output (phases + tasks.md, no `### T{N}` headings; verified on the 0004 plan). The user had converged on strategic-plan + ralph anyway.
+
+**Changes:** `review-flow-only.js` gained `repoRoot` (pins cwd in every agent prompt; enables reviewing a worktree from the main-checkout session). New `/ralph:ship [spec]`: newest-spec default with re-ship guard → strategic-plan in a fresh Agent → `worktree-setup.sh` → `ralph-flow.js` → `review-flow-only` (`repoRoot`, `baseRef`=merge-base, `specPath`) → `fix(review)` commit → findings report. run-flow command + workflow + parser moved to `commands-archive/`. strategic-plan now mandates a `**Source spec:**` line.
+
+### Open items
+- [ ] First real `/ralph:ship` run: score against the 0004 manual chain (cost, wall clock, review verdict). This is the "hybrid experiment" leg from 07-28, now with the seams closed.
+- [ ] Parallel ships need per-worktree dev-server port + DB isolation in czub-subscription's CLAUDE.md (E2E lanes already exist: `127.0.0.1:54331+lane`); until then, one ship at a time.
+- [ ] Plan review is absent from the ship chain (run-flow had a codex plan-review loop). Decide after the first scored run whether a single codex plan pass before implement earns its cost.
+
 ## 2026-08-02 — Retro-scoring the 07-29 `review-flow-only` run over the continue-dev leg: all-codex panel, 4/7 unique findings confirmed, fixer crashed on SSL — codex findings judged genuine; "continue-dev best" verdict stands but narrows
 
 Retro evaluation (written 08-02) of the review that the 07-28 continue-dev eval's recommendation #1 asked for: session `d84521ee`, workflow `wf_1ee8af7c`, 07-29 16:54–17:24 CDT, `planPath: SPEC/ACTIVE/0001-admin-financial-override/plan.md`, against continue-dev's then-uncommitted main-repo tree. Companion doc: `2026-07-28-continue-dev-evaluation.md`.

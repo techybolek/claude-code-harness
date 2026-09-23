@@ -18,8 +18,11 @@ quality at ~75% of the cost, sequential wall clock.
 
 ```bash
 cd <project_root>
-claude   # /ralph:strategic-plan <feature>   → creates SPEC/ACTIVE/NNNN-<name>/
+claude   # /ralph:ship [spec]   → plan + worktree + implement + review + commit fixes, one kickoff
+         #   (no arg = newest spec under SPEC/; refuses a spec that already has a task)
 
+# or step by step:
+claude   # /ralph:strategic-plan <feature>   → creates SPEC/ACTIVE/NNNN-<name>/
 ~/.claude/scripts/ralph/ralph-pipeline.sh    # implement + review + commit fixes
 
 # review branch ralph/NNNN-<name>, merge, then:
@@ -192,8 +195,10 @@ review stage then checks them again with fresh eyes via `planPath`.
 ## Known limitations
 
 - **Wall clock is sequential**: implement then review (~66m + ~35m on the
-  TPV2 A/B feature). For wide, parallelizable features or when write-time
-  hardening matters (security/audit-critical), prefer `exec:run-flow`.
+  TPV2 A/B feature). The parallel-wave alternative (`exec:run-flow`) was
+  archived 2026-09-18 — its planner and plan format had diverged from
+  strategic-plan's; parallelism now comes from running independent tasks in
+  separate worktrees.
 - **Bundle-size gates can't run in TPV2 worktrees**: `angular.json` references
   compiled CSS (`projects/shared/src/{resources,table}.css`) that exists
   nowhere in the repo; `ng build` fails in any fresh checkout. Run bundle

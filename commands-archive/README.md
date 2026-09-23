@@ -5,6 +5,17 @@ and no inbound references from any other command, skill, or workflow.
 
 Archived 2026-09-04. Not listed by Claude Code while they live here.
 
+## Archived 2026-09-18 — the run-flow pipeline
+
+`exec/run-flow.md`, `workflows/run-review-flow.js`, `workflows/parse-plan.cjs`.
+Its spec mode delegated planning to `plan/feature.md` / `plan/chore.md`, archived
+above on 09-04, so a feature spec failed at the planner; and its parser only
+accepts flat `### T{N}` task headings, while `/ralph:strategic-plan` (the planner
+actually in use) emits phases plus `tasks.md`. Successor: `/ralph:ship`
+(strategic-plan → ralph-flow in a worktree → review-flow-only with `repoRoot`).
+The 2026-07-28 A/B notes in `notes/harness-tuning-log.md` still describe what
+run-flow did well (plan review, parallel waves, write-time hardening).
+
 To restore one:
 
     git mv commands-archive/<ns>/<name>.md commands/<ns>/<name>.md
@@ -16,5 +27,5 @@ Deliberately NOT archived despite zero invocations — each is called by somethi
 | `exec:review-loop`, `exec:review-panel` | `ralph:continue-dev` |
 | `ralph:flow` | `spec:advanced-discovery`, `workflows/ralph-flow.js` |
 | `spec:advanced-discovery` | `workflows/discovery-flow.js` |
-| `exec:run`, `exec:run-flow` | entry points for the `run-review-flow` workflow |
+| `exec:run` | standalone executor of the legacy `### T{N}` plan format |
 | `ralph:ralph` | README only; kept as the namesake of the ralph pipeline |

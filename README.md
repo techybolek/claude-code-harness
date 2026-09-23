@@ -108,7 +108,7 @@ get ignored.
 /spec:refine          # vague request  -> specification
 /spec:tech-refine     # spec           -> technical architecture
 /plan:feature         # spec           -> implementation plan
-/exec:run-flow        # spec or plan   -> plan review -> implement -> validate -> review -> fix
+/ralph:ship [spec]    # spec (default: newest) -> plan -> implement in a worktree -> codex review -> fix
 ```
 
 For long autonomous runs there's the Ralph loop — `/ralph:strategic-plan` to break work into tasks,

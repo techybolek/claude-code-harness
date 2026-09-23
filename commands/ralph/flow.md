@@ -54,10 +54,10 @@ permissions that allow agents to write to the worktree — e.g. a
 
 ## Notes
 
-- The review stage stays on `ralph-pipeline.sh --skip-ralph` deliberately:
-  `review-flow-only` assumes its session cwd is the repo under review, and the
-  pipeline provides that by launching its head session inside the worktree.
-  Folding it into ralph-flow.js needs a `repoRoot` arg in review-flow-only
-  first (v2).
+- The review stage stays on `ralph-pipeline.sh --skip-ralph` here (headless
+  session inside the worktree). `review-flow-only` gained a `repoRoot` arg on
+  2026-09-18; `/ralph:ship` uses it to run the review as a Workflow from the
+  main-checkout session, and is the single-kickoff path (spec → plan →
+  implement → review). This command remains the resume/continue path.
 - `ralph.sh` remains usable standalone; this command is the A/B alternative
   (see `~/.claude/notes/harness-tuning-log.md` for the comparison culture).

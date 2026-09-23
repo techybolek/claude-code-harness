@@ -26,4 +26,4 @@ Optional: a plan path. If absent, use the most recently modified `SPEC/ACTIVE/*/
 
 - Report-only: no triage gate, no fixer, no re-review rounds. The only file you write is the report.
 - UNAVAILABLE panelists don't fail the run — 2/3 is still useful signal; 0/3 means the codex CLI is down: say so instead of writing an empty report.
-- This is the manual-inspection path. For the automated review→fix pipeline use `review-flow-only` (post-fix re-verify) or `exec:run-flow`.
+- This is the manual-inspection path. For the automated review→fix pipeline use `review-flow-only` (post-fix re-verify) or `/ralph:ship` (spec → reviewed branch).
