@@ -4,7 +4,7 @@
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2"
   },
   "includeCoAuthoredBy": false,
-  "model": "sonnet",
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -55,5 +55,6 @@
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
   "theme": "dark",
-  "editorMode": "vim"
+  "editorMode": "vim",
+  "switchModelsOnFlag": true
 }
