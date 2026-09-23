@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Workflow-native Ralph — implement a SPEC/ACTIVE task via ralph-flow.js (structured status, no markers), then review via ralph-pipeline.sh --skip-ralph
+description: Workflow-native Ralph — implement a SPEC/ACTIVE task via ralph-flow.js (structured status, no markers), then codex review & fix via review-flow-only (same as /ralph:ship steps 5–7)
 argument-hint: [task-dir] [max-iterations]
 ---
 
@@ -13,14 +13,16 @@ history is journaled harness-side, and one retry covers transient agent death.
 You are the orchestrator: you never edit code yourself. A full feature takes
 ~1–2 h; this session must stay alive throughout (run it in tmux, and with
 permissions that allow agents to write to the worktree — e.g. a
-`--dangerously-skip-permissions` session, same as `ralph-pipeline.sh` today).
+`--dangerously-skip-permissions` session, same as `/ralph:ship`).
 
 ## Steps
 
 1. **Resolve the task.** If `$ARGUMENTS` starts with a `NNNN-*` name, use it.
    Otherwise `SPEC/ACTIVE/` must contain exactly one `NNNN-*` dir — with zero
    or several, stop and ask; never silently pick one. A trailing numeric
-   argument is `maxIterations` (default 20).
+   argument is `maxIterations` (default 20). Run from the main checkout, not
+   a worktree; record `PROJECT_ROOT=$PWD`, `BASE_BRANCH` (current branch) and
+   `SPEC_REL` from `plan.md`'s ``**Source spec:**`` line (absent → no spec).
 
 2. **Provision the worktree.**
    `~/.claude/scripts/ralph/worktree-setup.sh "$PWD" <task-dir>` — idempotent;
@@ -37,27 +39,19 @@ permissions that allow agents to write to the worktree — e.g. a
    - **`all_done`** — guard first: confirm `<worktree>/.runs/<task>/SUMMARY.md`
      exists and `git -C <worktree> status --porcelain` shows no uncommitted
      source changes (untracked `.runs/` is fine). If either fails, treat as
-     incomplete and say so. Then run the review stage as a **background** Bash
-     task (~35 min, exceeds the foreground timeout):
-     `cd <projectRoot> && RALPH_TASK=<task-dir> ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-ralph`
-     Wait for its notification, then relay the review verdict from its output
-     (review log path is printed by the pipeline).
+     incomplete and say so. Otherwise execute `~/.claude/commands/ralph/ship.md`
+     **Steps 5–7** exactly (review-flow-only with `repoRoot` + `baseRef`, commit
+     the reviewed state, findings report, summary), with `WORKTREE` = the
+     worktree path and `specPath` omitted when there is no `SPEC_REL`.
    - **`blocked`** — report `blockedReason` verbatim plus what the human must
      do; after they resolve it they re-run `/ralph:flow` (on-disk state
      carries — no resume machinery needed).
    - **`max_iterations` / `agent_error`** — report iteration history and tell
      the user to re-run `/ralph:flow` to continue.
 
-5. **Final report.** Branch `ralph/<task-dir>`, commits made, review verdict,
-   and next steps: review + merge the branch, then `ralph.sh --cleanup` and
-   `git mv SPEC/ACTIVE/<task-dir> SPEC/ARCHIVE/`.
-
 ## Notes
 
-- The review stage stays on `ralph-pipeline.sh --skip-ralph` here (headless
-  session inside the worktree). `review-flow-only` gained a `repoRoot` arg on
-  2026-09-18; `/ralph:ship` uses it to run the review as a Workflow from the
-  main-checkout session, and is the single-kickoff path (spec → plan →
-  implement → review). This command remains the resume/continue path.
-- `ralph.sh` remains usable standalone; this command is the A/B alternative
-  (see `~/.claude/notes/harness-tuning-log.md` for the comparison culture).
+- `/ralph:ship` is the single-kickoff path (spec → plan → implement → review);
+  this command is its resume/continue path for an already-planned task.
+- `ralph.sh` / `ralph-pipeline.sh` remain usable standalone from a terminal
+  (see `~/.claude/scripts/ralph/README.md`).

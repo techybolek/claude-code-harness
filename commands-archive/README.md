@@ -24,6 +24,9 @@ run-flow did well (plan review, parallel waves, write-time hardening).
   (opus adjudicator); their two-seat triage/fixer policy had diverged from it. The part
   still in use — codex reviewer prompt, lenses, committed-range mode — moved to
   `scripts/review/prompts/CODE_REVIEW_POLICY.md`.
+- `ralph/ralph.md` — `/ralph:ship` / `/ralph:flow` replaced the bash loop as the entry
+  point. `scripts/ralph/ralph.sh` and `ralph-pipeline.sh` stay for terminal use and
+  `ralph.sh --cleanup`; `/ralph:flow` now reviews via `review-flow-only` directly.
 
 To restore one:
 
@@ -35,4 +38,3 @@ Deliberately NOT archived despite zero invocations — each is called by somethi
 |---|---|
 | `ralph:flow` | `spec:advanced-discovery`, `workflows/ralph-flow.js` |
 | `spec:advanced-discovery` | `workflows/discovery-flow.js` |
-| `ralph:ralph` | README only; kept as the namesake of the ralph pipeline |

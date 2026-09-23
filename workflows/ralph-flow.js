@@ -1,7 +1,7 @@
 export const meta = {
   name: 'ralph-flow',
   description: 'Ralph implement loop, workflow-native: sequential fresh-context iterations over a SPEC/ACTIVE task in a shared worktree, structured status instead of <ralph> markers',
-  whenToUse: 'Launched by /ralph:flow. Args: { projectRoot, taskDir, worktreePath, maxIterations?, model? }. Review stage stays outside: on all_done the launcher runs ralph-pipeline.sh --skip-ralph (review-flow-only assumes its session cwd is the repo under review, which this workflow cannot guarantee).',
+  whenToUse: 'Launched by /ralph:flow. Args: { projectRoot, taskDir, worktreePath, maxIterations?, model? }. Review stage stays outside: on all_done the launcher runs review-flow-only with repoRoot = the worktree (/ralph:ship steps 5–7).',
   phases: [
     { title: 'Implement', detail: 'loop-until-done; one fresh-context agent per iteration; structured item_done/all_done/blocked' },
   ],
@@ -106,7 +106,7 @@ for (let i = 1; i <= maxIterations; i++) {
 
 // ---------- Result ----------
 const next = {
-  all_done: `Verify ${worktreePath}/.runs/${taskDir}/SUMMARY.md exists and the worktree is clean, then run the review stage in a BACKGROUND Bash task (it exceeds the foreground timeout): cd ${projectRoot} && RALPH_TASK=${taskDir} ~/.claude/scripts/ralph/ralph-pipeline.sh --skip-ralph`,
+  all_done: `Verify ${worktreePath}/.runs/${taskDir}/SUMMARY.md exists and the worktree is clean, then run the review stage: ~/.claude/commands/ralph/ship.md Steps 5–7 (review-flow-only with repoRoot = ${worktreePath}).`,
   blocked: `Surface blockedReason to the user verbatim. After the human resolves it, re-run /ralph:flow — on-disk state (tasks.md checkboxes, commits) carries; no resume machinery needed.`,
   max_iterations: `Re-run /ralph:flow to continue — tasks.md checkboxes and commits carry the state.`,
   agent_error: `Iteration agent died twice in a row (likely API outage). Re-run /ralph:flow once the API is healthy.`,
