@@ -97,9 +97,8 @@ than committing or deleting them.
 
 ### Step 8: Hand Off to Review
 
-Committed work is invisible to the uncommitted-diff reviewers
-(`/exec:review-loop`, `/exec:review-panel`) — they would report a clean PASS
-over an empty diff. The reviewer needs a **base ref** instead.
+Committed work is invisible to an uncommitted-diff review — it would report a
+clean PASS over an empty diff. The reviewer needs a **base ref** instead.
 
 Before finishing, print the exact invocation, with `<base>` resolved to the
 merge-base of the branch you worked on:

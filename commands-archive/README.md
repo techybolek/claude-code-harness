@@ -20,6 +20,10 @@ run-flow did well (plan review, parallel waves, write-time hardening).
 
 - `exec/run.md`, `scripts/run_plan.py` — executors of the `### T{N}` plan format.
   Nothing produces it any more (`/ralph:strategic-plan` emits phases + `tasks.md`).
+- `exec/review-loop.md`, `exec/review-panel.md` — the review stage is `review-flow-only`
+  (opus adjudicator); their two-seat triage/fixer policy had diverged from it. The part
+  still in use — codex reviewer prompt, lenses, committed-range mode — moved to
+  `scripts/review/prompts/CODE_REVIEW_POLICY.md`.
 
 To restore one:
 
@@ -29,7 +33,6 @@ Deliberately NOT archived despite zero invocations — each is called by somethi
 
 | Command | Called by |
 |---|---|
-| `exec:review-loop`, `exec:review-panel` | `ralph:continue-dev` |
 | `ralph:flow` | `spec:advanced-discovery`, `workflows/ralph-flow.js` |
 | `spec:advanced-discovery` | `workflows/discovery-flow.js` |
 | `ralph:ralph` | README only; kept as the namesake of the ralph pipeline |

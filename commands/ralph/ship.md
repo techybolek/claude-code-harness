@@ -91,8 +91,7 @@ exist there (tracked `SPEC/`), else the `PROJECT_ROOT` copies.
 **Workflow** tool: `scriptPath: ~/.claude/workflows/review-flow-only.js`,
 `args: { "planPath": "<abs plan.md>", "specPath": "<abs spec>", "repoRoot": "<WORKTREE>", "baseRef": "<BASE_REF>", "validate": "off" }`.
 `repoRoot` is what lets the panel review the worktree from this session; never
-omit it. Wait for the notification. Never fall back to `exec:review-loop` or
-`exec:review-panel`.
+omit it. Wait for the notification.
 
 ## Step 6 — Commit the reviewed state
 

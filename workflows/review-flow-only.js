@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review-flow-only',
   description: 'Standalone Validate + Code-review loop over an existing implementation — codex lens panel, one opus adjudicator that judges and fixes, re-review until plateau',
-  whenToUse: 'The review stage of /ralph:ship and the sanctioned post-manual-fix re-verify path (never exec:review-loop/review-panel). Args: { planPath, repoRoot?: string (absolute path of the checkout under review — REQUIRED when the session cwd is not that checkout, e.g. a ralph worktree launched from the main repo; every git/test/codex command then runs from it), validate?: "off"|"targeted"|"full" (default "off" — the implementer already ran the suite; "targeted" runs only what the diff can affect), validationCommands?: string[] (used only when validate != "off"), skipValidation?: boolean (legacy alias for validate:"off"), changedFiles?: string[] (explicit delta when git cannot derive it), baseRef?: string (committed-range mode: review git diff <baseRef> — working tree vs base — instead of the uncommitted diff; pass the branch merge-base for a fully committed feature branch, e.g. a completed Ralph run), specPath?: string (the user-authored source spec — intent authority above the plan; enables spec-grounded PLAN_DEVIATION adjudication) }.',
+  whenToUse: 'The review stage of /ralph:ship and the sanctioned post-manual-fix re-verify path. Args: { planPath, repoRoot?: string (absolute path of the checkout under review — REQUIRED when the session cwd is not that checkout, e.g. a ralph worktree launched from the main repo; every git/test/codex command then runs from it), validate?: "off"|"targeted"|"full" (default "off" — the implementer already ran the suite; "targeted" runs only what the diff can affect), validationCommands?: string[] (used only when validate != "off"), skipValidation?: boolean (legacy alias for validate:"off"), changedFiles?: string[] (explicit delta when git cannot derive it), baseRef?: string (committed-range mode: review git diff <baseRef> — working tree vs base — instead of the uncommitted diff; pass the branch merge-base for a fully committed feature branch, e.g. a completed Ralph run), specPath?: string (the user-authored source spec — intent authority above the plan; enables spec-grounded PLAN_DEVIATION adjudication) }.',
   phases: [
     { title: 'Validate', detail: 'off by default; targeted = only what the diff can affect; full = every command' },
     { title: 'Code review', detail: 'all-codex lens panel → single opus adjudicator (judges validity AND whether fixing is warranted, then fixes) → re-review loop; plateau after 2 fixes or 4 rounds stops' },
@@ -22,7 +22,7 @@ export const meta = {
 //      "real, but not worth fixing".
 // run-review-flow.js kept the old two-seat shape until it was archived
 // (2026-09-18, commands-archive/workflows/). Policy for the codex panel itself
-// still lives in review-loop.md / review-panel.md and IS shared with them.
+// lives in scripts/review/prompts/CODE_REVIEW_POLICY.md.
 const _args = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 const planPath = _args.planPath
 const validationCommands = Array.isArray(_args.validationCommands) ? _args.validationCommands : []
@@ -38,7 +38,7 @@ const validateMode = typeof _args.validate === 'string' && _args.validate.trim()
 // whole feature sits uncommitted in the tree). Present → validation skips suites
 // and runtime steps the delta provably cannot affect. Absent → full pass.
 const changedFiles = Array.isArray(_args.changedFiles) ? _args.changedFiles : []
-// Committed-range mode (review-loop.md's baseRef mode): the feature is already
+// Committed-range mode (CODE_REVIEW_POLICY.md's baseRef mode): the feature is already
 // committed (e.g. a completed Ralph branch), so the diff under review is
 // `git diff <baseRef>` — working tree vs base — covering the committed work plus
 // any uncommitted fixer edits in later rounds. Absent → uncommitted-diff mode.
@@ -107,7 +107,7 @@ const CODEX_CODE_OUT = {
   },
 }
 
-// ---------- prompts (reviewer policy shared with review-loop.md / review-panel.md) ----------
+// ---------- prompts (reviewer policy: scripts/review/prompts/CODE_REVIEW_POLICY.md) ----------
 const REALISM_RULE = `Realism floor: a blocking finding's failure scenario must be reachable by a realistic actor through the app's actual entry points — the UI as built or the documented API contract. Scenarios requiring inputs the UI cannot produce, concurrency the deployment does not actually exhibit, or data magnitudes outside the domain's real ranges are nits. Rigor machinery (locks, concurrency proofs, fault injection, extra precision handling) is warranted only where the spec/plan explicitly asks for it — an unrequested rigor upgrade is a nit, never blocking.`
 
 const codexWrapperRules = (slug) => `Run codex from the repo root${repoRoot ? ` (${repoRoot} — cd there first)` : ''} in ONE Bash call with timeout 600000: write the composed prompt to a temp file, then
@@ -117,7 +117,7 @@ Then read the output file and transcribe codex's findings VERBATIM into the stru
 
 If the codex CLI is missing, exits non-zero, produces no output file, or hits the timeout: return verdict UNAVAILABLE with all lists empty. Never invent a review, never retry more than once.`
 
-// Only the adjudicator uses this now — it no longer reads review-loop.md, so the
+// Only the adjudicator uses this now — it does not read CODE_REVIEW_POLICY.md, so the
 // note states the scope directly instead of redirecting a phrase in that file.
 const diffScopeNote = baseRef
   ? `\nThe changes under review are \`git diff ${baseRef}\` — the working tree vs that base, i.e. the committed feature work plus any uncommitted edits from earlier fix rounds. Never bare \`git diff\`. Untracked files still count (git status).\n`
@@ -171,7 +171,7 @@ ${deltaNote()}
 Return structured output: status SUCCESS only if there are no genuine regressions AND no acceptance criterion is covered only by a skipped/unexecuted test AND every in-scope Runtime Verification step passed (env-blocked suites noted in issues, and out-of-scope skips justified in testOutput, do not fail the run), summary, testOutput, issues. Do NOT create git commits.`
 }
 
-// Lens keys must match the table in review-panel.md — definitions live there only.
+// Lens keys must match the Lenses table in scripts/review/prompts/CODE_REVIEW_POLICY.md — definitions live there only.
 const CODE_LENSES = ['correctness', 'resilience', 'tests']
 
 function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = [], deviations = [], declined = []) {
@@ -188,12 +188,12 @@ function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = [], d
     ? `\n## Findings the triage gate REJECTED as stale, duplicate, or unrealistic — append this block verbatim to codex's prompt\nEach carries the gate's classification and rationale. Re-report one as blocking ONLY if you can state a concrete trigger path through the app's real entry points that refutes the rationale; otherwise do not re-report it.\n${disputed.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n`
     : ''
   const role = lens
-    ? `Add a lens line: codex is one of ${CODE_LENSES.length} parallel independent reviewers of the same diff and must run ALL the angles but dig deepest on the \`${lens}\` lens — copy that lens's full definition from review-panel.md's Lenses table into codex's prompt (codex cannot read ~/.claude), and tell it to report every blocking finding it sees regardless of lens. Also append this realism floor verbatim: "${REALISM_RULE}"`
-    : `Tell codex it is the single round-${round} re-reviewer verifying the diff after a fix round: run ALL the lens angles — copy every lens definition from review-panel.md's Lenses table into codex's prompt (codex cannot read ~/.claude) — in one coherent pass. Also append this severity floor verbatim: "Severity floor for this re-review round: report as blocking ONLY defects with a concrete failure scenario — a specific input or state under which the code produces wrong results, crashes, or a test passes/fails falsely. Changes that merely make a test, wait, or check more rigorous, exhaustive, or precise without such a scenario are nits." Also append this realism floor verbatim: "${REALISM_RULE}"`
-  return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex code panelists' : 'the cross-model Codex code re-reviewer'} (wrapper contract: ~/.claude/commands/exec/review-panel.md, "The Codex panelist" section). You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
+    ? `Add a lens line: codex is one of ${CODE_LENSES.length} parallel independent reviewers of the same diff and must run ALL the angles but dig deepest on the \`${lens}\` lens — copy that lens's full definition from the policy file's Lenses table into codex's prompt (codex cannot read ~/.claude), and tell it to report every blocking finding it sees regardless of lens. Also append this realism floor verbatim: "${REALISM_RULE}"`
+    : `Tell codex it is the single round-${round} re-reviewer verifying the diff after a fix round: run ALL the lens angles — copy every lens definition from the policy file's Lenses table into codex's prompt (codex cannot read ~/.claude) — in one coherent pass. Also append this severity floor verbatim: "Severity floor for this re-review round: report as blocking ONLY defects with a concrete failure scenario — a specific input or state under which the code produces wrong results, crashes, or a test passes/fails falsely. Changes that merely make a test, wait, or check more rigorous, exhaustive, or precise without such a scenario are nits." Also append this realism floor verbatim: "${REALISM_RULE}"`
+  return `You are the thin wrapper for ${lens ? 'one of the cross-model Codex code panelists' : 'the cross-model Codex code re-reviewer'} You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 ${cwdNote}
-1. Read ~/.claude/commands/exec/review-panel.md and ~/.claude/commands/exec/review-loop.md in full.
-2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath}${specPath ? ` and {spec-file-path} = ${specPath}` : ' and no spec (omit spec-specific instructions)'}.${baseRef ? ` baseRef = ${baseRef}: apply review-loop.md's committed-range mode — the composed codex prompt MUST tell codex to run \`git diff ${baseRef}\` (never bare git diff) as the diff under review.` : ''} ${role} Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
+1. Read ~/.claude/scripts/review/prompts/CODE_REVIEW_POLICY.md in full.
+2. Compose codex's prompt: the policy file's reviewer prompt with {plan-file-path} = ${planPath}${specPath ? ` and {spec-file-path} = ${specPath}` : ' and no spec (omit spec-specific instructions)'}.${baseRef ? ` baseRef = ${baseRef}: apply the policy file's committed-range mode — the composed codex prompt MUST tell codex to run \`git diff ${baseRef}\` (never bare git diff) as the diff under review.` : ''} ${role} Tell codex to report in the reviewer prompt's exact "### Review" format. The composed prompt must be fully self-contained: paste the reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
 3. ${codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`)}
 ${appliedNote}${disputedNote}${declinedNote}${deviationsNote}
 Structured output:

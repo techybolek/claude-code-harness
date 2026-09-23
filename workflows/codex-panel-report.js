@@ -9,7 +9,7 @@ export const meta = {
 
 // Report-only extraction of review-flow-only.js's round-1 panel (first proven
 // useful session b5253b31, 2026-08-04). Keep prompts in lockstep with that file —
-// policy lives in review-loop.md / review-panel.md. Differences from the source:
+// policy lives in scripts/review/prompts/CODE_REVIEW_POLICY.md. Differences from the source:
 // repoRoot is passed explicitly (the launching session's cwd may not be the repo)
 // and each wrapper reports the exact codex command it ran so the launcher can
 // verify the right repo was reviewed (a wrong -C path yields a false PASS).
@@ -39,14 +39,14 @@ Then read the output file and transcribe codex's findings VERBATIM into the stru
 
 If the codex CLI is missing, exits non-zero, produces no output file, or hits the timeout: return verdict UNAVAILABLE with all lists empty. Never invent a review, never retry more than once.`
 
-// Lens keys must match the table in review-panel.md — definitions live there only.
+// Lens keys must match the Lenses table in scripts/review/prompts/CODE_REVIEW_POLICY.md — definitions live there only.
 const CODE_LENSES = ['correctness', 'resilience', 'tests']
 
 function codexCodeReviewerPrompt(lens) {
-  return `You are the thin wrapper for one of the cross-model Codex code panelists (wrapper contract: ~/.claude/commands/exec/review-panel.md, "The Codex panelist" section). You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
+  return `You are the thin wrapper for one of the cross-model Codex code panelists You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
-1. Read ~/.claude/commands/exec/review-panel.md and ~/.claude/commands/exec/review-loop.md in full.
-2. Compose codex's prompt: review-loop.md's Step 1 reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions). Add a lens line: codex is one of ${CODE_LENSES.length} parallel independent reviewers of the same diff and must run ALL the angles but dig deepest on the \`${lens}\` lens — copy that lens's full definition from review-panel.md's Lenses table into codex's prompt (codex cannot read ~/.claude), and tell it to report every blocking finding it sees regardless of lens. Also append this realism floor verbatim: "${REALISM_RULE}" Tell codex to report in review-loop.md's exact "### Review" format. The composed prompt must be fully self-contained: paste the Step 1 reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
+1. Read ~/.claude/scripts/review/prompts/CODE_REVIEW_POLICY.md in full.
+2. Compose codex's prompt: the policy file's reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions). Add a lens line: codex is one of ${CODE_LENSES.length} parallel independent reviewers of the same diff and must run ALL the angles but dig deepest on the \`${lens}\` lens — copy that lens's full definition from the policy file's Lenses table into codex's prompt (codex cannot read ~/.claude), and tell it to report every blocking finding it sees regardless of lens. Also append this realism floor verbatim: "${REALISM_RULE}" Tell codex to report in the reviewer prompt's exact "### Review" format. The composed prompt must be fully self-contained: paste the reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
 3. ${codexWrapperRules(`report-${lens}`)}
 
 Structured output:
