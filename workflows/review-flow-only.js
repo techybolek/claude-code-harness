@@ -45,7 +45,7 @@ const changedFiles = Array.isArray(_args.changedFiles) ? _args.changedFiles : []
 const baseRef = typeof _args.baseRef === 'string' && _args.baseRef.trim() ? _args.baseRef.trim() : null
 // Source spec (intent authority): the user-authored artifact the plan was derived
 // from. Authority hierarchy: spec (intent) > plan (Done-when, invariants) >
-// mechanism prescriptions — the triage gate uses it to adjudicate PLAN_DEVIATION.
+// mechanism prescriptions — the adjudicator uses it to rule on PLAN_DEVIATION.
 const specPath = typeof _args.specPath === 'string' && _args.specPath.trim() ? _args.specPath.trim() : null
 // Repository under review: absolute path of the checkout the diff lives in. Absent
 // → the session cwd (the historical assumption: the launcher runs inside the repo,

@@ -52,27 +52,25 @@ and the safety validator, and merge `settings.json` by hand rather than overwrit
 Start read-only. Get a feel for the findings before you let anything act on them.
 
 ```bash
-# read-only: findings report, changes nothing
-/exec:panel-report <plan-path>
-
-# panel of reviewers + automated fix loop
-/exec:review-panel <plan-path> [spec-path]
-
-# single reviewer + fix loop
-/exec:review-loop <plan-path> [spec-path]
+# read-only: codex lens panel over the uncommitted tree, findings report, changes nothing
+/exec:panel-report [plan-path]
 ```
 
-Both path arguments are optional, and both are worth supplying:
+The review→fix loop is the `review-flow-only` workflow. `/ralph:ship` and `/ralph:flow` run it for
+you; to re-verify after a manual fix, launch it directly:
+
+```
+Workflow review-flow-only { planPath, specPath?, baseRef?, repoRoot? }
+```
 
 - **plan** — what was decided, and what's in this change. This is what the diff is checked against.
 - **spec** — what the feature is for, and what is explicitly out of scope. Settles it when the code
   and the plan disagree.
+- **baseRef** — review `git diff <baseRef>` (e.g. the branch merge-base) instead of the uncommitted
+  tree; required for committed work such as a Ralph branch.
+- **repoRoot** — the checkout under review, when it isn't the session's cwd (a worktree).
 
-With neither, you still get a review — it just can't check intent, so expect it to re-litigate
-decisions you'd already made and to ask for things you deliberately ruled out.
-
-By default the diff under review is your uncommitted working tree. To review an already-committed
-branch instead, pass `baseRef=<merge-base>`.
+The reviewer prompt and lenses live in `scripts/review/prompts/CODE_REVIEW_POLICY.md`.
 
 ### Why a panel, and why a second model
 
@@ -82,20 +80,17 @@ is there because a reviewer sharing the implementer's training also shares its b
 an idiom it would have written itself and judges it fine. You don't want a *better* reviewer so much
 as one that's wrong about different things.
 
-### The triage gate
+### The adjudicator
 
-Findings do **not** go straight to the fixer. A gate in between re-checks each one against the
-current code and the spec/plan, and drops:
+Findings do **not** go straight into edits. One opus adjudicator re-checks each against the current
+code and the spec/plan, then either fixes it or files it as:
 
-- **stale** — already fixed, or the reviewer misread; cite file:line
-- **unrealistic** — technically constructible, but unreachable through the app's real entry points,
-  or demanding rigor the spec never asked for
-- **duplicate** — same defect reported twice
+- **reject** — stale, misread, duplicate, or unreachable through the app's real entry points
+- **decline** — real, but fixing it isn't warranted (rigor the spec never asked for)
+- **plan deviation** — the code contradicts the plan but is defensible against the spec; escalated
+  for a human decision, never auto-fixed
 
-Conflicts where the code contradicts the plan but is defensible against the spec are escalated for a
-human decision, never auto-fixed.
-
-This gate is the load-bearing part. A noisy reviewer with a gate in front of the fixer is a good
+This gate is the load-bearing part. A noisy reviewer with a judge in front of the fix is a good
 reviewer; the same reviewer wired straight into a fixer will grind for rounds and sometimes break more
 than it fixes. Instructions in the reviewer prompt are not a substitute — they're requests, and they
 get ignored.
@@ -107,12 +102,12 @@ get ignored.
 ```bash
 /spec:refine          # vague request  -> specification
 /spec:tech-refine     # spec           -> technical architecture
-/plan:feature         # spec           -> implementation plan
 /ralph:ship [spec]    # spec (default: newest) -> plan -> implement in a worktree -> codex review -> fix
 ```
 
-For long autonomous runs there's the Ralph loop — `/ralph:strategic-plan` to break work into tasks,
-then `/ralph:ralph` or `/ralph:flow` to grind through them in fresh contexts.
+`/ralph:ship` chains `/ralph:strategic-plan` (break work into tasks) → the Ralph loop (fresh context
+per iteration, isolated worktree) → `review-flow-only`. To resume a task it stopped on — blocked, or
+out of iterations — run `/ralph:flow <task>`.
 
 ---
 

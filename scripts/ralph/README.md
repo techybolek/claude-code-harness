@@ -23,7 +23,8 @@ claude   # /ralph:ship [spec]   → plan + worktree + implement + review + commi
 
 # or step by step:
 claude   # /ralph:strategic-plan <feature>   → creates SPEC/ACTIVE/NNNN-<name>/
-~/.claude/scripts/ralph/ralph-pipeline.sh    # implement + review + commit fixes
+claude   # /ralph:flow <NNNN-name>          → implement + review (also resumes a stopped ship)
+~/.claude/scripts/ralph/ralph-pipeline.sh    # terminal alternative: implement + review + commit fixes
 
 # review branch ralph/NNNN-<name>, merge, then:
 ~/.claude/scripts/ralph/ralph.sh --cleanup
