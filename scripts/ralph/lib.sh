@@ -52,7 +52,7 @@ resolve_active_task() {
     count=$(echo -n "$candidates" | grep -c . || true)
     if [ "$count" -eq 0 ]; then
         log_error "No active tasks found in SPEC/ACTIVE/ (need a NNNN- prefixed dir)"
-        log_info "Create a task with /ralph:strategic-plan first"
+        log_info "Create a task with /ralph:ship or /ralph:continue-dev <spec> first"
         return 1
     fi
     if [ "$count" -gt 1 ]; then

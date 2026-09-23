@@ -1,12 +1,12 @@
 export const meta = {
   name: 'review-flow-only',
   description: 'Standalone Validate + Code-review loop over an existing implementation — codex lens panel, one opus adjudicator that judges and fixes, re-review until plateau',
-  whenToUse: 'The review stage of /ralph:ship and the sanctioned post-manual-fix re-verify path. Args: { planPath, repoRoot?: string (absolute path of the checkout under review — REQUIRED when the session cwd is not that checkout, e.g. a ralph worktree launched from the main repo; every git/test/codex command then runs from it), validate?: "off"|"targeted"|"full" (default "off" — the implementer already ran the suite; "targeted" runs only what the diff can affect), validationCommands?: string[] (used only when validate != "off"), skipValidation?: boolean (legacy alias for validate:"off"), changedFiles?: string[] (explicit delta when git cannot derive it), baseRef?: string (committed-range mode: review git diff <baseRef> — working tree vs base — instead of the uncommitted diff; pass the branch merge-base for a fully committed feature branch, e.g. a completed Ralph run), specPath?: string (the user-authored source spec — intent authority above the plan; enables spec-grounded PLAN_DEVIATION adjudication) }.',
+  whenToUse: 'The review stage of /ralph:ship and the sanctioned post-manual-fix re-verify path. Args: { specPath (the source spec; without planPath it is also the scope and acceptance authority), planPath?: string (legacy plan.md — when present it is the scope authority and the spec is intent-only), repoRoot?: string (absolute path of the checkout under review — REQUIRED when the session cwd is not that checkout, e.g. a ralph worktree launched from the main repo; every git/test/codex command then runs from it), validate?: "off"|"targeted"|"full" (default "off" — the implementer already ran the suite; "targeted" runs only what the diff can affect), validationCommands?: string[] (used only when validate != "off"), skipValidation?: boolean (legacy alias for validate:"off"), changedFiles?: string[] (explicit delta when git cannot derive it), baseRef?: string (committed-range mode: review git diff <baseRef> — working tree vs base — instead of the uncommitted diff; pass the branch merge-base for a fully committed feature branch, e.g. a completed Ralph run), }.',
   phases: [
     { title: 'Validate', detail: 'off by default; targeted = only what the diff can affect; full = every command' },
     { title: 'Code review', detail: 'all-codex lens panel → single opus adjudicator (judges validity AND whether fixing is warranted, then fixes) → re-review loop; plateau after 2 fixes or 4 rounds stops' },
   ],
-  model: 'claude-opus-5',
+  model: 'claude-opus-5-5',
 }
 
 // ---------- input ----------
@@ -24,7 +24,10 @@ export const meta = {
 // (2026-09-18, commands-archive/workflows/). Policy for the codex panel itself
 // lives in scripts/review/prompts/CODE_REVIEW_POLICY.md.
 const _args = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
-const planPath = _args.planPath
+// No plan (the default since strategic-plan was dropped): the spec takes the
+// plan's role — scope boundary and acceptance gate — everywhere below.
+const specArg = typeof _args.specPath === 'string' && _args.specPath.trim() ? _args.specPath.trim() : null
+const planPath = _args.planPath || specArg
 const validationCommands = Array.isArray(_args.validationCommands) ? _args.validationCommands : []
 
 // Validation mode: 'off' (default) | 'targeted' | 'full'. skipValidation:true is
@@ -46,7 +49,7 @@ const baseRef = typeof _args.baseRef === 'string' && _args.baseRef.trim() ? _arg
 // Source spec (intent authority): the user-authored artifact the plan was derived
 // from. Authority hierarchy: spec (intent) > plan (Done-when, invariants) >
 // mechanism prescriptions — the adjudicator uses it to rule on PLAN_DEVIATION.
-const specPath = typeof _args.specPath === 'string' && _args.specPath.trim() ? _args.specPath.trim() : null
+const specPath = _args.planPath ? specArg : null
 // Repository under review: absolute path of the checkout the diff lives in. Absent
 // → the session cwd (the historical assumption: the launcher runs inside the repo,
 // as ralph-pipeline.sh does). Present → every prompt pins cwd there, so a ralph
@@ -56,7 +59,7 @@ const cwdNote = repoRoot
   ? `\nRepository under review: ${repoRoot}. Your default cwd is NOT that directory — start every Bash call with \`cd ${repoRoot} &&\` (git, tests, builds, codex alike). Paths in findings are relative to it.\n`
   : ''
 if (!planPath) {
-  return { status: 'FAILED', stage: 'input', reason: 'Invalid args: need planPath (plus optional validate, validationCommands, baseRef, specPath).' }
+  return { status: 'FAILED', stage: 'input', reason: 'Invalid args: need specPath or planPath (plus optional validate, validationCommands, baseRef).' }
 }
 if (!VALIDATE_MODES.includes(validateMode)) {
   return { status: 'FAILED', stage: 'input', reason: `Invalid validate: '${validateMode}' (expected one of ${VALIDATE_MODES.join(', ')}).` }
@@ -156,7 +159,7 @@ function validationPrompt(cmds0, mode) {
 
   const full = `Run every command below. ${changedFiles.length ? 'This re-verify pass is DELTA-SCOPED — see the Delta scope section.' : 'No baseline was recorded, so a failure in code no task touched may be pre-existing: check git history / the base branch before counting it as a regression.'}`
 
-  return `Run cross-task validation for the plan at ${planPath}. All tasks are implemented; catch cross-task regressions.
+  return `Run cross-task validation for ${planPath}. All tasks are implemented; catch cross-task regressions.
 ${cwdNote}
 ${cmds}
 
@@ -213,7 +216,7 @@ ${priorRejected.length ? `\nRejected as not real:\n${priorRejected.map((f, i) =>
     : ''
   return `You are the review adjudicator, round ${round} — a single seat holding BOTH judgement and repair. Independent parallel codex reviewers produced the blocking findings below. You decide which are real, which of the real ones are worth fixing, and you fix those yourself. No one downstream re-litigates your calls, and no one upstream can overrule them: the authority is yours.
 
-Plan (scope and acceptance authority): ${planPath}${specPath ? `\nSpec (intent authority): ${specPath}` : ''}
+Plan (scope and acceptance authority): ${planPath}${_args.planPath ? '' : ' — this is the source spec; there is no separate plan, so "the plan" below means this spec (its Acceptance Criteria are the Done-when, its Hard Invariants the invariants)'}${specPath ? `\nSpec (intent authority): ${specPath}` : ''}
 ${baseRef ? `The diff under review is \`git diff ${baseRef}\` (committed work plus any uncommitted edits).` : 'The diff under review is the uncommitted working-tree diff.'}
 ${cwdNote}
 ## Findings
@@ -325,7 +328,7 @@ if (validation !== 'FAIL') {
 
     // ---- the adjudicator: one opus seat, judgement + repair ----
     const a = await agent(adjudicatorPrompt(blocking, round, rejected, declined), {
-      label: `adjudicate r${round}`, model: 'claude-opus-5', effort: 'high', phase: 'Code review', schema: ADJUDICATOR_OUT,
+      label: `adjudicate r${round}`, model: 'claude-opus-5-5', effort: 'high', phase: 'Code review', schema: ADJUDICATOR_OUT,
     })
     if (!a) { review = 'UNRESOLVED'; unresolvedFindings = blocking; break }
     rejected.push(...(a.rejected ?? []))

@@ -12,7 +12,7 @@ parts that are useful to you.
 
 | Path | What it is |
 |---|---|
-| `commands/` | Slash commands — the entry points. `spec/`, `plan/`, `exec/`, `ralph/`, `ops/` |
+| `commands/` | Slash commands — the entry points. `spec/`, `exec/`, `ralph/`, `ops/` |
 | `workflows/` | Deterministic multi-agent pipelines driven by the `Workflow` tool |
 | `skills/` | Cloud-ops and tooling guides loaded on demand (AWS, Azure, GCP, Qdrant, Playwright, pptx) |
 | `agents/` | Subagent definitions |
@@ -53,19 +53,20 @@ Start read-only. Get a feel for the findings before you let anything act on them
 
 ```bash
 # read-only: codex lens panel over the uncommitted tree, findings report, changes nothing
-/exec:panel-report [plan-path]
+/exec:panel-report [spec-path]
 ```
 
 The review→fix loop is the `review-flow-only` workflow. `/ralph:ship` and `/ralph:flow` run it for
 you; to re-verify after a manual fix, launch it directly:
 
 ```
-Workflow review-flow-only { planPath, specPath?, baseRef?, repoRoot? }
+Workflow review-flow-only { specPath, planPath?, baseRef?, repoRoot? }
 ```
 
-- **plan** — what was decided, and what's in this change. This is what the diff is checked against.
-- **spec** — what the feature is for, and what is explicitly out of scope. Settles it when the code
-  and the plan disagree.
+- **spec** — what the feature is for, its acceptance criteria and Hard Invariants, and what is out
+  of scope. This is what the diff is checked against.
+- **plan** — only for older tasks that have a `plan.md`: then the plan is the scope and the spec
+  settles it when the code and the plan disagree.
 - **baseRef** — review `git diff <baseRef>` (e.g. the branch merge-base) instead of the uncommitted
   tree; required for committed work such as a Ralph branch.
 - **repoRoot** — the checkout under review, when it isn't the session's cwd (a worktree).
@@ -102,11 +103,11 @@ get ignored.
 ```bash
 /spec:refine          # vague request  -> specification
 /spec:tech-refine     # spec           -> technical architecture
-/ralph:ship [spec]    # spec (default: newest) -> plan -> implement in a worktree -> codex review -> fix
+/ralph:ship [spec]    # spec (default: newest) -> implement in a worktree -> codex review -> fix
 ```
 
-`/ralph:ship` chains `/ralph:strategic-plan` (break work into tasks) → the Ralph loop (fresh context
-per iteration, isolated worktree) → `review-flow-only`. To resume a task it stopped on — blocked, or
+`/ralph:ship` creates the task folder, then runs the Ralph loop (fresh context per iteration,
+isolated worktree; the first iteration writes `tasks.md` from the spec) → `review-flow-only`. To resume a task it stopped on — blocked, or
 out of iterations — run `/ralph:flow <task>`.
 
 ---

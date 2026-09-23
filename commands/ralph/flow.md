@@ -22,7 +22,7 @@ permissions that allow agents to write to the worktree — e.g. a
    or several, stop and ask; never silently pick one. A trailing numeric
    argument is `maxIterations` (default 20). Run from the main checkout, not
    a worktree; record `PROJECT_ROOT=$PWD`, `BASE_BRANCH` (current branch) and
-   `SPEC_REL` from `plan.md`'s ``**Source spec:**`` line (absent → no spec).
+   `SPEC_REL` from the ``**Source spec:**`` line in `tasks.md` (or `plan.md` for an older task).
 
 2. **Provision the worktree.**
    `~/.claude/scripts/ralph/worktree-setup.sh "$PWD" <task-dir>` — idempotent;
@@ -31,7 +31,7 @@ permissions that allow agents to write to the worktree — e.g. a
 3. **Launch the implement loop.** Invoke the Workflow tool with
    `scriptPath: ~/.claude/workflows/ralph-flow.js` and
    `args: { projectRoot: "$PWD", taskDir, worktreePath, maxIterations }`
-   (optionally `model` — full model ID only; default `claude-sonnet-5`).
+   (optionally `model` — full model ID only; default `claude-opus-5-5`).
    It runs in the background: wait for the completion notification. Do not
    poll, and never report results before the notification arrives.
 
@@ -42,7 +42,8 @@ permissions that allow agents to write to the worktree — e.g. a
      incomplete and say so. Otherwise execute `~/.claude/commands/ralph/ship.md`
      **Steps 5–7** exactly (review-flow-only with `repoRoot` + `baseRef`, commit
      the reviewed state, findings report, summary), with `WORKTREE` = the
-     worktree path and `specPath` omitted when there is no `SPEC_REL`.
+     worktree path. An older task with a `plan.md` also passes `planPath`; with
+     neither a spec nor a plan there is nothing to review against, so stop and say so.
    - **`blocked`** — report `blockedReason` verbatim plus what the human must
      do; after they resolve it they re-run `/ralph:flow` (on-disk state
      carries — no resume machinery needed).
@@ -51,7 +52,7 @@ permissions that allow agents to write to the worktree — e.g. a
 
 ## Notes
 
-- `/ralph:ship` is the single-kickoff path (spec → plan → implement → review);
-  this command is its resume/continue path for an already-planned task.
+- `/ralph:ship` is the single-kickoff path (spec → implement → review);
+  this command is its resume/continue path for an already-started task.
 - `ralph.sh` / `ralph-pipeline.sh` remain usable standalone from a terminal
   (see `~/.claude/scripts/ralph/README.md`).

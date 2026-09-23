@@ -23,7 +23,7 @@ const worktreePath = _args.worktreePath
 const maxIterations = Number.isInteger(_args.maxIterations) && _args.maxIterations > 0 ? _args.maxIterations : 20
 // Full model ID always — aliases like 'opus' silently resolve to the session
 // model since CLI 2.1.219.
-const model = typeof _args.model === 'string' && _args.model ? _args.model : 'claude-sonnet-5'
+const model = typeof _args.model === 'string' && _args.model ? _args.model : 'claude-opus-5-5'
 if (!projectRoot || !taskDir || !worktreePath) {
   return { status: 'FAILED', stage: 'input', reason: `Invalid args: need projectRoot, taskDir, worktreePath (got ${JSON.stringify(_args)}). The launcher runs worktree-setup.sh first and passes its output.` }
 }
@@ -57,13 +57,13 @@ Read ~/.claude/scripts/ralph/prompts/AGENT_PROMPT.md IN FULL and follow it, with
 
 ## Paths
 - Working tree (the ONLY place you modify code): ${worktreePath} — branch ralph/${taskDir}. Your default cwd is NOT the worktree: cd there explicitly in every Bash call.
-- Task docs (SPEC/ is gitignored and exists only in the main checkout): ${projectRoot}/SPEC/ACTIVE/${taskDir}/{plan,tasks,context}.md. Update tasks.md and context.md there per AGENT_PROMPT Phase 5.
+- Task docs (SPEC/ is gitignored and exists only in the main checkout): ${projectRoot}/SPEC/ACTIVE/${taskDir}/{tasks,context}.md (plus plan.md if an older task has one; the source spec path is on the **Source spec:** line). Update tasks.md and context.md there per AGENT_PROMPT.
 - Modify nothing else under ${projectRoot}. Starting/restarting shared dev services (backend, ng serve, project skills like restart-backend) is allowed and encouraged when the environment is down.
 
 ## Output contract — replaces AGENT_PROMPT's OUTPUT MARKERS section
 Do NOT print <ralph>...</ralph> markers; they are inert here. Return structured output instead:
-- status: "item_done" (this iteration's selected items complete and committed; more tasks.md items remain) | "all_done" (every tasks.md item checked, SUMMARY.md written, all work committed) | "blocked" (AGENT_PROMPT's Unrecoverable cases)
-- summary: what you completed and HOW you verified it (same content AGENT_PROMPT's completion report asks for)
+- status: "item_done" (this iteration's selected items complete and committed; more tasks.md items remain) | "all_done" (every tasks.md item checked, SUMMARY.md written, all work committed) | "blocked" (AGENT_PROMPT's ERROR_STOP cases)
+- summary: what you completed and HOW you verified it 
 - items_completed (task ids, e.g. ["P1-2","P1-3"]), commit_sha, tests_written, tests_passed, regression_passed (null if not run), blocked_reason (blocked only)
 
 ## Progress log — replaces AGENT_PROMPT's PROGRESS LOG section

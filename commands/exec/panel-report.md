@@ -9,7 +9,7 @@ You are a thin launcher for the `codex-panel-report` named workflow. It runs the
 ## Input
 $ARGUMENTS
 
-Optional: a plan path. If absent, use the most recently modified `SPEC/ACTIVE/*/plan.md` under the repo root and state which one you picked (don't ask).
+Optional: a spec (or older plan.md) path — passed as `planPath`, the review's scope authority. If absent, use the spec named on the `**Source spec:**` line of the most recently modified `SPEC/ACTIVE/*/tasks.md` under the repo root and state which one you picked (don't ask).
 
 ## Steps
 

@@ -141,11 +141,11 @@ if [ ! -f "$WORKTREE_PATH/.git" ]; then
 fi
 
 # ---- Stage 3: code-review loop ---------------------------------------------
-PLAN_PATH="SPEC/ACTIVE/${TASK_DIR}/plan.md"
-if [ ! -f "$WORKTREE_PATH/$PLAN_PATH" ]; then
-    log_error "Plan not found in worktree: $PLAN_PATH"
-    exit 1
-fi
+# The task's source spec is named on tasks.md's "**Source spec:**" line (older
+# tasks: plan.md's, and that plan.md is also passed as the scope authority).
+TASK_PATH="SPEC/ACTIVE/${TASK_DIR}"
+PLAN_PATH=""
+[ -f "$WORKTREE_PATH/$TASK_PATH/plan.md" ] && PLAN_PATH="$TASK_PATH/plan.md"
 
 # Ralph agents commit every iteration — the review target is the committed
 # range (plus any later uncommitted fixer edits): working tree vs merge-base.
@@ -161,19 +161,22 @@ if [ -z "$BASE_REF" ]; then
 fi
 log_info "Review base: $BASE_BRANCH ($BASE_REF)"
 
-# Source spec (intent authority above the plan): derived from plan.md's
-# "**Source spec:**" header so the triage gate can adjudicate plan-vs-code
-# conflicts up the hierarchy (spec intent > plan letter). Absent → omit.
-SPEC_PATH=$(sed -n 's/^\*\*Source spec:\*\*[[:space:]]*`\{0,1\}\([^`]*\)`\{0,1\}.*$/\1/p' "$WORKTREE_PATH/$PLAN_PATH" | head -1 | sed 's/[[:space:]]*$//')
+SPEC_PATH=$(sed -n 's/^\*\*Source spec:\*\*[[:space:]]*`\{0,1\}\([^`]*\)`\{0,1\}.*$/\1/p' "$WORKTREE_PATH/$TASK_PATH/tasks.md" "$WORKTREE_PATH/$TASK_PATH/plan.md" 2>/dev/null | head -1 | sed 's/[[:space:]]*$//')
 if [ -n "$SPEC_PATH" ] && [ ! -f "$WORKTREE_PATH/$SPEC_PATH" ]; then
-    log_warn "Source spec named in plan.md not found in worktree: $SPEC_PATH — reviewing without spec"
+    log_warn "Source spec not found in worktree: $SPEC_PATH"
     SPEC_PATH=""
+fi
+if [ -z "$SPEC_PATH" ] && [ -z "$PLAN_PATH" ]; then
+    log_error "Nothing to review against: no source spec (tasks.md **Source spec:** line) and no plan.md in $TASK_PATH"
+    exit 1
 fi
 
 REVIEW_ARGS=$(python3 - "$PLAN_PATH" "$VALIDATE" "$BASE_REF" "$SPEC_PATH" "${VALIDATION_COMMANDS[@]+"${VALIDATION_COMMANDS[@]}"}" <<'EOF'
 import json, sys
 plan, validate, base, spec, cmds = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
-args = {"planPath": plan, "validate": validate}
+args = {"validate": validate}
+if plan:
+    args["planPath"] = plan
 if base:
     args["baseRef"] = base
 if spec:

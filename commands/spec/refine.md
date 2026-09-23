@@ -57,6 +57,9 @@ This should inform your understanding but not override the user's explicit reque
 - [ ] [Criterion 1]
 - [ ] [Criterion 2]
 
+## Hard Invariants
+[Constraints that must hold however it's implemented, e.g. "public portal renders unchanged", "no schema migration". Usually 1–4; binding on the implementer and checked in review. Omit if none.]
+
 ## User Experience
 - **Interface**: [Web/API/Mobile/CLI]
 - **Key Interactions**: [describe]

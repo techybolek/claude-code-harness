@@ -18,11 +18,10 @@ quality at ~75% of the cost, sequential wall clock.
 
 ```bash
 cd <project_root>
-claude   # /ralph:ship [spec]   → plan + worktree + implement + review + commit fixes, one kickoff
+claude   # /ralph:ship [spec]   → task folder + worktree + implement + review + commit fixes, one kickoff
          #   (no arg = newest spec under SPEC/; refuses a spec that already has a task)
 
 # or step by step:
-claude   # /ralph:strategic-plan <feature>   → creates SPEC/ACTIVE/NNNN-<name>/
 claude   # /ralph:flow <NNNN-name>          → implement + review (also resumes a stopped ship)
 ~/.claude/scripts/ralph/ralph-pipeline.sh    # terminal alternative: implement + review + commit fixes
 
@@ -55,9 +54,10 @@ state is on disk; a dropped terminal loses only live output, not progress.
 `<path-slug>` = project root path with `/` → `-`, e.g.
 `-home-tromanow-PROJECTS-TP-TPV2.sh`.
 
-Related slash commands (`~/.claude/commands/ralph/`): `strategic-plan` (create
-the task; includes the **Hard Invariants** section — see below), `ralph`
-(wraps ralph.sh), `continue-dev` (manual single-session continuation),
+Related slash commands (`~/.claude/commands/ralph/`): `ship` (creates the
+task folder: `tasks.md` holding only the `**Source spec:**` line — the first
+iteration writes the checklist), `continue-dev` (manual single-session
+implementation; also starts a task from a spec),
 `clean` (bulk worktree/branch removal). `~/.claude/scripts/next-task-number.sh`
 allocates NNNN across SPEC/ACTIVE + SPEC/ARCHIVE.
 
@@ -81,8 +81,8 @@ Stages:
 2. Runs `ralph.sh`. Exit 2 (max iterations) stops the pipeline **without**
    reviewing — rerun to continue. Exit ≠0/2 aborts.
 3. Runs `/review-flow-only` headlessly inside the worktree with
-   `{planPath, baseRef (merge-base — reviews the committed branch work),
-   specPath (from plan.md's "Source spec:" header, if present), and
+   `{specPath (from tasks.md's "Source spec:" line), baseRef (merge-base —
+   reviews the committed branch work), planPath (older tasks with a plan.md only), and
    validationCommands or skipValidation}`; transcript →
    `<worktree>/.runs/<task>/review_<timestamp>.log`. A run that ends without a
    `REVIEW_VERDICT:` line is treated as killed mid-run — nothing is committed.
@@ -118,7 +118,7 @@ Each iteration launches a fresh `claude -p` session in the worktree with
 (exit 0; agent writes `.runs/<task>/SUMMARY.md` first), or
 `<ralph>ERROR_STOP</ralph>` (exit 1). Max iterations → exit 2.
 
-- Model: pinned via `RALPH_MODEL` (default `claude-sonnet-5`). Always a full
+- Model: pinned via `RALPH_MODEL` (default `claude-opus-5-5`). Always a full
   model ID — aliases like `opus` silently resolve to the session model since
   CLI 2.1.219.
 - Isolation: branch `ralph/<task>`, Write/Edit allowlisted to the worktree.
@@ -172,7 +172,7 @@ Missing config is fine — the review runs without extra validation commands.
 
 ## Onboarding a new project
 
-1. Project needs `SPEC/ACTIVE/` (created by `/ralph:strategic-plan`) and
+1. Project needs `SPEC/ACTIVE/` (created by `/ralph:ship`) and
    `worktrees/` gitignored.
 2. If a fresh checkout can't run the app/tests: write
    `worktree-hooks/<slug>.sh` (copy nested env files, auth state — with the
@@ -183,22 +183,22 @@ Missing config is fine — the review runs without extra validation commands.
 
 ---
 
-## Hard Invariants (plan contract)
+## Hard Invariants (spec contract)
 
-`strategic-plan` plans are "proposed future state" — direction, not contract;
-the loop agent may adapt as it learns. The exception is the plan's **Hard
-Invariants** section: constraints that hold no matter what (e.g. "public portal
+There is no plan stage (strategic-plan archived 2026-09-23): the implementer
+writes its own `tasks.md` from the spec and adapts it as it learns. The
+exception is the spec's **Hard Invariants** section (`spec:refine` /
+`spec:bug-report` templates): constraints that hold no matter what (e.g. "public portal
 renders unchanged"). AGENT_PROMPT.md binds the agent to re-verify an invariant
 after any change that could affect it — especially self-initiated fixes, which
 is exactly how the 07-28 portal bug shipped (an unreviewed iter-4 fix). The
-review stage then checks them again with fresh eyes via `planPath`.
+review stage then checks them again with fresh eyes via `specPath`.
 
 ## Known limitations
 
 - **Wall clock is sequential**: implement then review (~66m + ~35m on the
   TPV2 A/B feature). The parallel-wave alternative (`exec:run-flow`) was
-  archived 2026-09-18 — its planner and plan format had diverged from
-  strategic-plan's; parallelism now comes from running independent tasks in
+  archived 2026-09-18; parallelism now comes from running independent tasks in
   separate worktrees.
 - **Bundle-size gates can't run in TPV2 worktrees**: `angular.json` references
   compiled CSS (`projects/shared/src/{resources,table}.css`) that exists

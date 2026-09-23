@@ -1,13 +1,13 @@
 ---
 name: ship
-description: One kickoff from spec to reviewed branch — plan (strategic-plan) → implement (ralph-flow, isolated worktree) → codex review & fix (review-flow-only). No argument = the newest spec under SPEC/.
+description: One kickoff from spec to reviewed branch — implement (ralph-flow, isolated worktree; the implementer writes its own tasks.md) → codex review & fix (review-flow-only). No argument = the newest spec under SPEC/.
 argument-hint: [spec-path]
 ---
 
-You are a thin orchestrator. You resolve the spec, plan it in a fresh context,
+You are a thin orchestrator. You resolve the spec, create the task folder,
 provision a worktree, run the Ralph implement loop, run the codex review loop,
 commit the reviewed state, and report. You never edit code or docs yourself
-(one exception in Step 2). A full run takes 1–3 h and this session must stay
+(beyond the one-line `tasks.md` stub in Step 2). A full run takes 1–3 h and this session must stay
 alive throughout: run it in tmux with permissions that let agents write to the
 worktree (`--dangerously-skip-permissions`, same as `/ralph:flow`).
 
@@ -27,34 +27,32 @@ never end a turn with a promise.
      `ls -t SPEC/FEATURE-REQUEST/*.md SPEC/BUG-REPORT/*.md SPEC/CHORE/*.md SPEC/TECHNICAL/*.md SPEC/REQUIREMENTS/*.md 2>/dev/null | head -1`
      None → STOP: "No spec found under SPEC/."
 3. **Re-ship guard.** `SPEC_REL` = the spec path relative to `PROJECT_ROOT`.
-   `HIT=$(grep -l -F "$SPEC_REL" SPEC/ACTIVE/*/plan.md SPEC/ARCHIVE/*/plan.md 2>/dev/null | head -1)`
+   `HIT=$(grep -l -F "$SPEC_REL" SPEC/ACTIVE/*/tasks.md SPEC/ARCHIVE/*/tasks.md SPEC/ACTIVE/*/plan.md SPEC/ARCHIVE/*/plan.md 2>/dev/null | head -1)`
    — key on the output, not the exit code (an empty `SPEC/ARCHIVE` glob makes
-   grep exit 2 even on a hit). `HIT` non-empty → STOP: "`<spec>` is already planned as `<task-dir>`. Continue it with
+   grep exit 2 even on a hit). `HIT` non-empty → STOP: "`<spec>` is already started as `<task-dir>`. Continue it with
    `/ralph:flow <task-dir>`, or pass a different spec path." The newest spec
-   being already planned means no new spec was written — never fall through to
+   being already started means no new spec was written — never fall through to
    an older one.
 4. Print one line: `Shipping: <SPEC_REL> (modified <mtime>) from <BASE_BRANCH>`.
 
-## Step 2 — Plan (fresh context)
+## Step 2 — Task folder
 
-Launch the **Agent** tool, `subagent_type: general-purpose`, **no `model`
-override** (inherits the session model; the `opus` alias silently runs the
-session model anyway). Prompt:
+`NNNN=$(~/.claude/scripts/next-task-number.sh "$PROJECT_ROOT")`; `<task>` = `NNNN-<kebab name from the spec's filename, 2–4 words, date suffix dropped>`.
+Create `SPEC/ACTIVE/<task>/tasks.md` containing only:
 
-> Read `~/.claude/commands/ralph/strategic-plan.md` and execute it exactly as
-> written, with `$ARGUMENTS` = `<absolute spec path>`. Project root:
-> `<PROJECT_ROOT>` — run `next-task-number.sh` from there and create the task
-> under `<PROJECT_ROOT>/SPEC/ACTIVE/`. `plan.md` must carry
-> ``**Source spec:** `<SPEC_REL>` `` directly under its title. Do not create git
-> commits. Your final message is ONLY the task directory name (`NNNN-name`).
+```
+# Tasks — <task>
 
-Wait for the notification, then verify `SPEC/ACTIVE/<task>/{plan,tasks,context}.md`
-exist and `plan.md` contains the `**Source spec:**` line (append it if missing —
-the only edit you make yourself; the re-ship guard and the review stage depend on it).
+**Source spec:** `<SPEC_REL>`
+```
+
+No plan: the implementer reads the spec and writes the checklist itself. The
+re-ship guard, the implement loop and the review stage all resolve the spec
+from that line.
 
 If `SPEC/` is tracked in this project (`git ls-files SPEC | head -1` prints
-something): `git add SPEC/ACTIVE/<task> "$SPEC_REL" && git commit -m "docs(spec): plan <task>"`.
-The worktree branches from HEAD, so this puts the plan on the feature branch and
+something): `git add SPEC/ACTIVE/<task> "$SPEC_REL" && git commit -m "docs(spec): start <task>"`.
+The worktree branches from HEAD, so this puts the spec on the feature branch and
 keeps the later merge clean. Gitignored `SPEC/` → skip; the docs live only here.
 
 ## Step 3 — Worktree
@@ -85,11 +83,11 @@ for the human; the implement loop carries them itself.
 (Ralph commits every iteration, so the uncommitted diff is empty and a panel
 would PASS on nothing).
 
-Paths for the review: use the worktree copy of `plan.md` and the spec when they
-exist there (tracked `SPEC/`), else the `PROJECT_ROOT` copies.
+Path for the review: use the worktree copy of the spec when it exists there
+(tracked `SPEC/`), else the `PROJECT_ROOT` copy.
 
 **Workflow** tool: `scriptPath: ~/.claude/workflows/review-flow-only.js`,
-`args: { "planPath": "<abs plan.md>", "specPath": "<abs spec>", "repoRoot": "<WORKTREE>", "baseRef": "<BASE_REF>", "validate": "off" }`.
+`args: { "specPath": "<abs spec>", "repoRoot": "<WORKTREE>", "baseRef": "<BASE_REF>", "validate": "off" }`.
 `repoRoot` is what lets the panel review the worktree from this session; never
 omit it. Wait for the notification.
 
@@ -126,14 +124,14 @@ printf 'REVIEW_VERDICT: %s' '<review result JSON verbatim>' | python3 ~/.claude/
 ```
 
 Plan deviations non-empty → say plainly that the pipeline did not fix them by
-rule: amend the spec/plan (the sanctioned lever) or accept the plan's letter,
+rule: amend the spec (the sanctioned lever) or accept the code as it is,
 then re-run only the review with the same `review-flow-only` args.
 `review: UNRESOLVED` because codex was unavailable → the fixes are unverified;
 say so and give the same re-run.
 
 ## Rules
 
-- **Stay thin.** Never read a diff, test log, or plan body into your own context;
+- **Stay thin.** Never read a diff, test log, or spec body into your own context;
   the agents do that. Debug a strange result from the workflow's `journal.jsonl`.
 - **Parallel ships** are safe at the git level (own worktree, own branch) but
   share dev-server ports and databases. Run two at once only when the project's

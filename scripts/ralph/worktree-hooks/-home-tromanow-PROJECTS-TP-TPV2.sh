@@ -52,9 +52,9 @@ else
 fi
 
 # SPEC/ is untracked in this repo, so it never reaches a worktree — but
-# ralph-pipeline.sh's review stage gates on
-# <worktree>/SPEC/ACTIVE/<task>/plan.md and exits 1 without it (no validate,
-# no panel, no fixer). Symlink, not copy: plan.md checkbox and progress edits
+# ralph-pipeline.sh's review stage reads the source spec via
+# <worktree>/SPEC/ACTIVE/<task>/tasks.md and exits 1 without it (no validate,
+# no panel, no fixer). Symlink, not copy: tasks.md checkbox and progress edits
 # belong to the one main checkout, and the agent already writes there via the
 # absolute path when the worktree lookup misses.
 if [[ -d "$ROOT/SPEC" ]]; then

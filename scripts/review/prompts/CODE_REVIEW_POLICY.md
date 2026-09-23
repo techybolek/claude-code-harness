@@ -16,12 +16,12 @@ reviewer prompt says "the uncommitted changes", substitute "all changes since {b
 
 ## Reviewer prompt
 
-`{plan-file-path}` / `{spec-file-path}`: when absent, omit the plan-/spec-specific instructions.
+`{plan-file-path}` / `{spec-file-path}`: when absent, omit the plan-/spec-specific instructions. When `{plan-file-path}` is itself a spec (no separate plan exists), its Acceptance Criteria stand in for the "Done when" criteria and its Hard Invariants for the plan's.
 
 ```
 Critically review the uncommitted changes{ implementing the plan at {plan-file-path}}.
 
-Your value is adversarial analysis, NOT test execution. The implementor has already run the tests — re-running the existing suite proves nothing and is a waste. Read the code and think hard about what could be wrong, from multiple angles. Run a test ONLY to confirm a specific suspicion you formed from reading (e.g. "I think this branch is never hit — let me prove it"), never as a blanket "do the tests pass" check.
+Your value is adversarial analysis, NOT test execution. The implementor has already run the tests — re-running the existing suite proves nothing and is a waste. Read the code and look for what could be wrong, from multiple angles. Run a test ONLY to confirm a specific suspicion you formed from reading (e.g. "I think this branch is never hit — let me prove it"), never as a blanket "do the tests pass" check.
 
 ## Inputs & their roles
 - **Plan** ({plan-file-path}) — the scope boundary and acceptance gate for THIS diff. Its per-task "Done when" criteria are what the diff must satisfy.

@@ -47,7 +47,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROMPTS_DIR="$HOME/.claude/scripts/ralph/prompts"
 # Explicit model ID, not an alias — aliases silently resolve to the session
 # model since CLI 2.1.219. Override per-run with RALPH_MODEL.
-RALPH_MODEL="${RALPH_MODEL:-claude-sonnet-5}"
+RALPH_MODEL="${RALPH_MODEL:-claude-opus-5-5}"
 
 # Shared logging, task resolution and worktree helpers
 source "$SCRIPT_DIR/lib.sh"
