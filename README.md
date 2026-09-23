@@ -56,7 +56,7 @@ Start read-only. Get a feel for the findings before you let anything act on them
 /exec:panel-report [spec-path]
 ```
 
-The review→fix loop is the `review-flow-only` workflow. `/ralph:ship` and `/ralph:flow` run it for
+The review→fix loop is the `review-flow-only` workflow. `/ralph:ship` runs it for
 you; to re-verify after a manual fix, launch it directly:
 
 ```
@@ -107,8 +107,8 @@ get ignored.
 ```
 
 `/ralph:ship` creates the task folder, then runs the Ralph loop (fresh context per iteration,
-isolated worktree; the first iteration writes `tasks.md` from the spec) → `review-flow-only`. To resume a task it stopped on — blocked, or
-out of iterations — run `/ralph:flow <task>`.
+isolated worktree; the first iteration writes `tasks.md` from the spec) → `review-flow-only`. If it stops — blocked, or
+out of iterations — re-run `/ralph:ship <spec>` to resume.
 
 ---
 

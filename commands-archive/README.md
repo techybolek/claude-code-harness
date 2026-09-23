@@ -30,6 +30,8 @@ run-flow did well (plan review, parallel waves, write-time hardening).
 - `plan/bug.md` — last of the `### T{N}` planners (siblings archived 09-04); no executor
   reads its output. Bugs go `/spec:bug-report` → `/ralph:ship`; its regression-test and
   surgical-fix rules moved into `ralph/strategic-plan.md`.
+- `ralph/flow.md` — `/ralph:ship` now resumes a started spec itself (skips the task
+  folder, reuses the worktree), which was flow's only remaining job.
 
 To restore one:
 
@@ -39,5 +41,4 @@ Deliberately NOT archived despite zero invocations — each is called by somethi
 
 | Command | Called by |
 |---|---|
-| `ralph:flow` | `spec:advanced-discovery`, `workflows/ralph-flow.js` |
 | `spec:advanced-discovery` | `workflows/discovery-flow.js` |

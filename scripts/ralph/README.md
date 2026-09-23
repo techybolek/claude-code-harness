@@ -19,11 +19,10 @@ quality at ~75% of the cost, sequential wall clock.
 ```bash
 cd <project_root>
 claude   # /ralph:ship [spec]   → task folder + worktree + implement + review + commit fixes, one kickoff
-         #   (no arg = newest spec under SPEC/; refuses a spec that already has a task)
+         #   (no arg = newest spec under SPEC/; re-run on a started spec resumes it)
 
-# or step by step:
-claude   # /ralph:flow <NNNN-name>          → implement + review (also resumes a stopped ship)
-~/.claude/scripts/ralph/ralph-pipeline.sh    # terminal alternative: implement + review + commit fixes
+# or from a terminal:
+~/.claude/scripts/ralph/ralph-pipeline.sh    # implement + review + commit fixes
 
 # review branch ralph/NNNN-<name>, merge, then:
 ~/.claude/scripts/ralph/ralph.sh --cleanup

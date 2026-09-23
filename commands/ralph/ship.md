@@ -1,6 +1,6 @@
 ---
 name: ship
-description: One kickoff from spec to reviewed branch — implement (ralph-flow, isolated worktree; the implementer writes its own tasks.md) → codex review & fix (review-flow-only). No argument = the newest spec under SPEC/.
+description: One kickoff from spec to reviewed branch, and the resume path for a stopped run — implement (ralph-flow, isolated worktree; the implementer writes its own tasks.md) → codex review & fix (review-flow-only). No argument = the newest spec under SPEC/.
 argument-hint: [spec-path]
 ---
 
@@ -9,7 +9,7 @@ provision a worktree, run the Ralph implement loop, run the codex review loop,
 commit the reviewed state, and report. You never edit code or docs yourself
 (beyond the one-line `tasks.md` stub in Step 2). A full run takes 1–3 h and this session must stay
 alive throughout: run it in tmux with permissions that let agents write to the
-worktree (`--dangerously-skip-permissions`, same as `/ralph:flow`).
+worktree (`--dangerously-skip-permissions`).
 
 Every Workflow/Agent step runs in the background — wait for its completion
 notification. Never poll, never report a result before the notification arrives,
@@ -26,14 +26,17 @@ never end a turn with a promise.
    - Otherwise the newest spec by modification time:
      `ls -t SPEC/FEATURE-REQUEST/*.md SPEC/BUG-REPORT/*.md SPEC/CHORE/*.md SPEC/TECHNICAL/*.md SPEC/REQUIREMENTS/*.md 2>/dev/null | head -1`
      None → STOP: "No spec found under SPEC/."
-3. **Re-ship guard.** `SPEC_REL` = the spec path relative to `PROJECT_ROOT`.
+3. **Resume check.** `SPEC_REL` = the spec path relative to `PROJECT_ROOT`.
    `HIT=$(grep -l -F "$SPEC_REL" SPEC/ACTIVE/*/tasks.md SPEC/ARCHIVE/*/tasks.md SPEC/ACTIVE/*/plan.md SPEC/ARCHIVE/*/plan.md 2>/dev/null | head -1)`
    — key on the output, not the exit code (an empty `SPEC/ARCHIVE` glob makes
-   grep exit 2 even on a hit). `HIT` non-empty → STOP: "`<spec>` is already started as `<task-dir>`. Continue it with
-   `/ralph:flow <task-dir>`, or pass a different spec path." The newest spec
-   being already started means no new spec was written — never fall through to
-   an older one.
-4. Print one line: `Shipping: <SPEC_REL> (modified <mtime>) from <BASE_BRANCH>`.
+   grep exit 2 even on a hit).
+   - `HIT` under `SPEC/ARCHIVE/` → STOP: "`<spec>` already shipped as `<task-dir>`."
+   - `HIT` under `SPEC/ACTIVE/` → **resume**: `<task>` = its directory name; skip
+     Step 2 and continue at Step 3 (worktree setup is idempotent; tasks.md
+     checkboxes and commits carry the implement state).
+   - No `HIT` → new ship. Never fall through to an older spec.
+4. Print one line: `Shipping: <SPEC_REL> (modified <mtime>) from <BASE_BRANCH>`,
+   or `Resuming: <task> (<SPEC_REL>) from <BASE_BRANCH>`.
 
 ## Step 2 — Task folder
 
@@ -47,7 +50,7 @@ Create `SPEC/ACTIVE/<task>/tasks.md` containing only:
 ```
 
 No plan: the implementer reads the spec and writes the checklist itself. The
-re-ship guard, the implement loop and the review stage all resolve the spec
+resume check, the implement loop and the review stage all resolve the spec
 from that line.
 
 If `SPEC/` is tracked in this project (`git ls-files SPEC | head -1` prints
@@ -73,9 +76,9 @@ for the human; the implement loop carries them itself.
   (untracked `.runs/` is fine). Either fails → treat as incomplete, report, STOP.
   Otherwise continue.
 - **`blocked`** — report `blockedReason` verbatim plus what the human must do.
-  STOP. After they resolve it: `/ralph:flow <task>` (on-disk state carries).
+  STOP. After they resolve it: `/ralph:ship <SPEC_REL>` resumes.
 - **`max_iterations` / `agent_error`** — report the iteration history; STOP.
-  Continue with `/ralph:flow <task>`.
+  Continue with `/ralph:ship <SPEC_REL>`.
 
 ## Step 5 — Review
 
@@ -136,5 +139,5 @@ say so and give the same re-run.
 - **Parallel ships** are safe at the git level (own worktree, own branch) but
   share dev-server ports and databases. Run two at once only when the project's
   CLAUDE.md defines per-worktree isolation for those; otherwise sequential.
-- The two commits this command makes (`docs(spec)` on the base branch, `fix(review)`
-  on the feature branch) are the whole of its git writes. No merges, no pushes.
+- The two commits this command makes (a resume skips the first) — `docs(spec)` on the base branch, `fix(review)`
+  on the feature branch — are the whole of its git writes. No merges, no pushes.

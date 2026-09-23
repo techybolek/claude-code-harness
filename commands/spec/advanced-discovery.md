@@ -18,7 +18,7 @@ A 5-phase pipeline:
 Phase 1 is a live conversation with you and runs in this session. Phases 2-5
 run as one fresh-context agent each inside a single background Workflow run
 (`~/.claude/workflows/discovery-flow.js`) — same architecture as
-`/ralph:flow`'s implement loop.
+`/ralph:ship`'s implement loop.
 
 ## Usage
 
