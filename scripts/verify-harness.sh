@@ -79,6 +79,8 @@ done < <(grep -rhoE '~/\.claude/[A-Za-z0-9_./-]+' "$CLAUDE_DIR/commands" "$CLAUD
 for d in "$CLAUDE_DIR"/skills/*/; do
     [ -d "$d" ] || continue
     name=$(basename "$d")
+    # synced/ holds the claude.ai account skills, one level deeper, managed by Claude Code
+    [ "$name" = synced ] && continue
     if [ ! -f "$d/SKILL.md" ]; then
         fail "skill '$name' has no SKILL.md" "add $d/SKILL.md or remove the directory"
     elif ! grep -q '^description:' "$d/SKILL.md"; then
@@ -94,6 +96,7 @@ ok "skill directories checked"
 for s in "$CLAUDE_DIR"/scripts/ralph/*.sh "$CLAUDE_DIR"/scripts/next-task-number.sh \
          "$CLAUDE_DIR"/scripts/ralph/worktree-hooks/*.sh; do
     [ -f "$s" ] || continue
+    [ "$(basename "$s")" = lib.sh ] && continue   # sourced, never executed
     if [ ! -x "$s" ]; then
         fail "not executable: $s" "chmod +x $s"
     fi
