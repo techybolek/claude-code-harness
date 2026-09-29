@@ -1,6 +1,6 @@
 export const meta = {
   name: 'review-flow-only',
-  description: 'Standalone Validate + Code-review loop over an existing implementation — codex lens panel, one opus adjudicator that judges and fixes, re-review until plateau',
+  description: 'Standalone Validate + Code-review loop over an existing implementation — codex lens panel (Fireworks fallback), one opus adjudicator that judges and fixes, re-review until plateau',
   whenToUse: 'The review stage of /ralph:ship and the sanctioned post-manual-fix re-verify path. Args: { specPath (the source spec; without planPath it is also the scope and acceptance authority), planPath?: string (legacy plan.md — when present it is the scope authority and the spec is intent-only), repoRoot?: string (absolute path of the checkout under review — REQUIRED when the session cwd is not that checkout, e.g. a ralph worktree launched from the main repo; every git/test/codex command then runs from it), validate?: "off"|"targeted"|"full" (default "off" — the implementer already ran the suite; "targeted" runs only what the diff can affect), validationCommands?: string[] (used only when validate != "off"), skipValidation?: boolean (legacy alias for validate:"off"), changedFiles?: string[] (explicit delta when git cannot derive it), baseRef?: string (committed-range mode: review git diff <baseRef> — working tree vs base — instead of the uncommitted diff; pass the branch merge-base for a fully committed feature branch, e.g. a completed Ralph run), }.',
   phases: [
     { title: 'Validate', detail: 'off by default; targeted = only what the diff can affect; full = every command' },
@@ -120,6 +120,27 @@ Then read the output file and transcribe codex's findings VERBATIM into the stru
 
 If the codex CLI is missing, exits non-zero, produces no output file, or hits the timeout: return verdict UNAVAILABLE with all lists empty. Never invent a review, never retry more than once.`
 
+// Fallback reviewers when codex is UNAVAILABLE (e.g. the workspace spend cap): Fireworks
+// models run through pi, one family per lens. Picked by a 2026-09-28 quality/cost probe;
+// kimi-k3 was comparable but ~4x the price.
+const FIREWORKS_LENS_MODEL = { correctness: 'glm-5p3', resilience: 'deepseek-v4p1-flash', tests: 'minimax-m3' }
+const FIREWORKS_REREVIEW_MODEL = 'glm-5p3'
+let reviewer = 'codex' // flips to 'fireworks' for the rest of the run on a codex outage
+
+const fireworksWrapperRules = (slug, model) => {
+  const diffCmd = baseRef
+    ? `git diff ${baseRef}`
+    : '`git diff HEAD`, then for each untracked file in `git status --porcelain` its full contents under a "=== untracked: <path>" header'
+  return `The reviewer is the Fireworks model ${model}, run through the pi CLI. Wherever this prompt says "codex", read it as that model: it likewise cannot read ~/.claude, so the composed prompt must be self-contained. It has read/grep/list tools over the repo but NO shell — so the composed prompt must say the diff under review is in the attached patch file, and must NOT tell it to run git (this overrides any "tell codex to run git diff" instruction above).
+
+Run it from the repo root${repoRoot ? ` (${repoRoot} — cd there first)` : ''} in ONE Bash call with timeout 600000: write the composed prompt to <tmpdir>/rev-prompt-${slug}.md and the diff under review (${diffCmd}) to <tmpdir>/rev-diff-${slug}.patch, then
+   timeout 580 pi --provider fireworks --model accounts/fireworks/models/${model} --no-session -t read,grep,list -p @<tmpdir>/rev-prompt-${slug}.md @<tmpdir>/rev-diff-${slug}.patch < /dev/null > <tmpdir>/rev-out-${slug}.md
+The "< /dev/null" is MANDATORY — without it pi blocks on stdin until the timeout. The "-${slug}" suffix is MANDATORY — parallel panelists share the temp dir.
+Then read the output file and transcribe the model's findings VERBATIM into the structured output — do not re-judge, drop, merge, or add findings of your own.
+
+If pi exits non-zero, the output file is empty, or the timeout hits: return verdict UNAVAILABLE with all lists empty. Never invent a review, never retry more than once.`
+}
+
 // Only the adjudicator uses this now — it does not read CODE_REVIEW_POLICY.md, so the
 // note states the scope directly instead of redirecting a phrase in that file.
 const diffScopeNote = baseRef
@@ -197,7 +218,9 @@ function codexCodeReviewerPrompt(lens, round = 1, applied = [], disputed = [], d
 ${cwdNote}
 1. Read ~/.claude/scripts/review/prompts/CODE_REVIEW_POLICY.md in full.
 2. Compose codex's prompt: the policy file's reviewer prompt with {plan-file-path} = ${planPath}${specPath ? ` and {spec-file-path} = ${specPath}` : ' and no spec (omit spec-specific instructions)'}.${baseRef ? ` baseRef = ${baseRef}: apply the policy file's committed-range mode — the composed codex prompt MUST tell codex to run \`git diff ${baseRef}\` (never bare git diff) as the diff under review.` : ''} ${role} Tell codex to report in the reviewer prompt's exact "### Review" format. The composed prompt must be fully self-contained: paste the reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
-3. ${codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`)}
+3. ${reviewer === 'codex'
+    ? codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`)
+    : fireworksWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`, lens ? FIREWORKS_LENS_MODEL[lens] : FIREWORKS_REREVIEW_MODEL)}
 ${appliedNote}${disputedNote}${declinedNote}${deviationsNote}
 Structured output:
 - verdict: PASS | NEEDS_WORK | UNAVAILABLE
@@ -283,14 +306,21 @@ if (validation !== 'FAIL') {
   for (let round = 1; ; round++) {
     let r
     if (round === 1) {
-      const raw = await parallel(CODE_LENSES.map(l => () =>
-        agent(codexCodeReviewerPrompt(l), { label: `code review r1:codex:${l}`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })))
-      const panel = raw.filter(p => p && p.verdict !== 'UNAVAILABLE')
-      log(`codex lens panelists up: ${panel.length}/${CODE_LENSES.length}`)
+      const runPanel = () => parallel(CODE_LENSES.map(l => () =>
+        agent(codexCodeReviewerPrompt(l), { label: `code review r1:${reviewer}:${l}`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })))
+      let raw = await runPanel()
+      let panel = raw.filter(p => p && p.verdict !== 'UNAVAILABLE')
+      if (!panel.length && raw.some(p => p?.verdict === 'UNAVAILABLE')) {
+        log('codex unavailable — falling back to the Fireworks panel')
+        reviewer = 'fireworks'
+        raw = await runPanel()
+        panel = raw.filter(p => p && p.verdict !== 'UNAVAILABLE')
+      }
+      log(`${reviewer} lens panelists up: ${panel.length}/${CODE_LENSES.length}`)
       if (!panel.length) {
         const outage = raw.some(p => p?.verdict === 'UNAVAILABLE')
         review = 'UNRESOLVED'
-        unresolvedFindings = [outage ? 'Codex CLI unavailable — all lens panelists returned UNAVAILABLE; code NOT reviewed.' : 'All panel reviewers died.']
+        unresolvedFindings = [outage ? 'Codex and Fireworks reviewers unavailable — all lens panelists returned UNAVAILABLE; code NOT reviewed.' : 'All panel reviewers died.']
         break
       }
       r = {
@@ -299,9 +329,15 @@ if (validation !== 'FAIL') {
         nits: panel.flatMap(p => p.nits ?? []),
       }
     } else {
-      r = await agent(codexCodeReviewerPrompt(null, round, appliedFixes, rejected, planDeviations, declined), { label: `code review r${round}:codex`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })
+      const reReview = () => agent(codexCodeReviewerPrompt(null, round, appliedFixes, rejected, planDeviations, declined), { label: `code review r${round}:${reviewer}`, model: 'haiku', phase: 'Code review', schema: CODEX_CODE_OUT })
+      r = await reReview()
+      if (r?.verdict === 'UNAVAILABLE' && reviewer === 'codex') {
+        log(`codex unavailable at round ${round} — falling back to Fireworks`)
+        reviewer = 'fireworks'
+        r = await reReview()
+      }
       if (!r) { review = 'UNRESOLVED'; unresolvedFindings = ['Reviewer agent died.']; break }
-      if (r.verdict === 'UNAVAILABLE') { review = 'UNRESOLVED'; unresolvedFindings = [`Codex CLI unavailable at code-review round ${round} — fixes not re-verified.`]; break }
+      if (r.verdict === 'UNAVAILABLE') { review = 'UNRESOLVED'; unresolvedFindings = [`Reviewer (${reviewer}) unavailable at code-review round ${round} — fixes not re-verified.`]; break }
     }
     reviewNits = r.nits ?? []
     const tag = () => {
@@ -361,6 +397,7 @@ return {
   validation,
   validationIssues,
   review,
+  reviewer,
   unresolvedFindings,
   // Real defects nobody repaired — these need a human read, not just the summary line.
   declined,
