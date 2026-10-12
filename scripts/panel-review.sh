@@ -50,8 +50,8 @@ seat_cmd() {
     orion)    echo "ask_orion (orion-stage --headless)" ;;
     glm)      echo "piglm  → accounts/fireworks/models/glm-5p3" ;;
     kimi)     echo "pikimi → accounts/fireworks/models/kimi-k3" ;;
-    dsflash)  echo "pidsf  → accounts/fireworks/models/deepseek-v4-flash-0731" ;;
-    nemotron) echo "pinemo → accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b" ;;
+    dsflash)  echo "pidsf  → accounts/fireworks/models/deepseek-v4p1-flash" ;;
+    nemotron) echo "pinemo → accounts/fireworks/models/nemotron-3-ultra-nvfp4" ;;
     dsh)      echo "ask_dsh (dsh --profile headless)" ;;
     *)        echo "unknown" ;;
   esac

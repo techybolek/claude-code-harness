@@ -25,8 +25,8 @@ If no target is given, use the most recently modified file in cwd that looks lik
 | `orion` | `ask_orion` | (orion default) |
 | `glm` | `piglm` | glm-5p3 |
 | `kimi` | `pikimi` | kimi-k3 — **off by default**, opt in via `seats=` |
-| `dsflash` | `pidsf` | deepseek-v4-flash-0731 |
-| `nemotron` | `pinemo` | nemotron-lightning-3p5-30b-a3b |
+| `dsflash` | `pidsf` | deepseek-v4p1-flash |
+| `nemotron` | `pinemo` | nemotron-3-ultra-nvfp4 |
 | `dsh` | `ask_dsh` | dsh default (glm-5p3) — **off by default**, opt in via `seats=` |
 
 ## Steps
