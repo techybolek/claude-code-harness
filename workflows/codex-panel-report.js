@@ -1,7 +1,7 @@
 export const meta = {
   name: 'codex-panel-report',
   description: 'Report-only codex lens panel: 3 parallel codex reviewers over uncommitted changes — findings returned verbatim, no triage, no fixer',
-  whenToUse: 'Launched by /exec:panel-report. Args: { planPath, repoRoot }. Read-only: codex runs under --sandbox read-only; the launcher writes the markdown report (the workflow sandbox has no file I/O).',
+  whenToUse: 'Launched by /exec:panel-report. Args: { planPath, repoRoot, baseRef? } — baseRef = committed-range mode (git diff <baseRef>, working tree vs base). Read-only: codex runs under --sandbox read-only; the launcher writes the markdown report (the workflow sandbox has no file I/O).',
   phases: [
     { title: 'Code review', detail: '3 parallel codex lens panelists; findings transcribed verbatim, nothing modified' },
   ],
@@ -16,6 +16,7 @@ export const meta = {
 const _args = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 const planPath = _args.planPath
 const repoRoot = _args.repoRoot
+const baseRef = typeof _args.baseRef === 'string' && _args.baseRef.trim() ? _args.baseRef.trim() : null
 if (!planPath || !repoRoot) {
   return { status: 'FAILED', stage: 'input', reason: 'Invalid args: need planPath and repoRoot.' }
 }
@@ -46,7 +47,7 @@ function codexCodeReviewerPrompt(lens) {
   return `You are the thin wrapper for one of the cross-model Codex code panelists You do NOT review any code yourself — codex is the reviewer; you only compose its prompt, run the CLI, and transcribe its report.
 
 1. Read ~/.claude/scripts/review/prompts/CODE_REVIEW_POLICY.md in full.
-2. Compose codex's prompt: the policy file's reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions). Add a lens line: codex is one of ${CODE_LENSES.length} parallel independent reviewers of the same diff and must run ALL the angles but dig deepest on the \`${lens}\` lens — copy that lens's full definition from the policy file's Lenses table into codex's prompt (codex cannot read ~/.claude), and tell it to report every blocking finding it sees regardless of lens. Also append this realism floor verbatim: "${REALISM_RULE}" Tell codex to report in the reviewer prompt's exact "### Review" format. The composed prompt must be fully self-contained: paste the reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
+2. Compose codex's prompt: the policy file's reviewer prompt with {plan-file-path} = ${planPath} and no spec (omit spec-specific instructions).${baseRef ? ` baseRef = ${baseRef}: apply the policy file's committed-range mode — the composed codex prompt MUST tell codex to run \`git diff ${baseRef}\` (never bare git diff) as the diff under review.` : ''} Add a lens line: codex is one of ${CODE_LENSES.length} parallel independent reviewers of the same diff and must run ALL the angles but dig deepest on the \`${lens}\` lens — copy that lens's full definition from the policy file's Lenses table into codex's prompt (codex cannot read ~/.claude), and tell it to report every blocking finding it sees regardless of lens. Also append this realism floor verbatim: "${REALISM_RULE}" Tell codex to report in the reviewer prompt's exact "### Review" format. The composed prompt must be fully self-contained: paste the reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
 3. ${codexWrapperRules(`report-${lens}`)}
 
 Structured output:
@@ -66,5 +67,6 @@ log(`codex lens panelists up: ${up}/${CODE_LENSES.length}`)
 return {
   planPath,
   repoRoot,
+  baseRef,
   panel: CODE_LENSES.map((l, i) => ({ lens: l, result: raw[i] ?? { verdict: 'UNAVAILABLE', blocking: [], nits: [], codexCommand: '', note: 'wrapper agent died' } })),
 }
