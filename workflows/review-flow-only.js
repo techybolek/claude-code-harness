@@ -113,11 +113,9 @@ const CODEX_CODE_OUT = {
 // ---------- prompts (reviewer policy: scripts/review/prompts/CODE_REVIEW_POLICY.md) ----------
 const REALISM_RULE = `Realism floor: a blocking finding's failure scenario must be reachable by a realistic actor through the app's actual entry points — the UI as built or the documented API contract. Scenarios requiring inputs the UI cannot produce, concurrency the deployment does not actually exhibit, or data magnitudes outside the domain's real ranges are nits. Rigor machinery (locks, concurrency proofs, fault injection, extra precision handling) is warranted only where the spec/plan explicitly asks for it — an unrequested rigor upgrade is a nit, never blocking.`
 
-// Codex model per lens: Sol only where it earns its price (correctness); the other lenses
-// mostly duplicate it and the re-review only checks applied fixes. Per the 2026-10 CGI
-// usage review — the workspace credit cap is monthly and Sol costs ~2x Terra.
-const CODEX_LENS_MODEL = { correctness: 'gpt-5.6-sol', resilience: 'gpt-5.6-terra', tests: 'gpt-5.6-terra' }
-const CODEX_REREVIEW_MODEL = 'gpt-5.6-terra'
+// One codex model for every lens and the re-review: gpt-6-sol costs about what 5.6 Terra did
+// (50/250 credits per MTok) and half of 5.6 Sol, so the old per-lens Sol/Terra split no longer pays.
+const CODEX_MODEL = 'gpt-6-sol'
 
 const codexWrapperRules = (slug, model) => `Run codex from the repo root${repoRoot ? ` (${repoRoot} — cd there first)` : ''} in ONE Bash call with timeout 600000: write the composed prompt to a temp file, then
    codex exec -m ${model} --sandbox read-only --ephemeral -o <tmpdir>/codex-review-${slug}.md - < <tmpdir>/codex-prompt-${slug}.md
@@ -225,7 +223,7 @@ ${cwdNote}
 1. Read ~/.claude/scripts/review/prompts/CODE_REVIEW_POLICY.md in full.
 2. Compose codex's prompt: the policy file's reviewer prompt with {plan-file-path} = ${planPath}${specPath ? ` and {spec-file-path} = ${specPath}` : ' and no spec (omit spec-specific instructions)'}.${baseRef ? ` baseRef = ${baseRef}: apply the policy file's committed-range mode — the composed codex prompt MUST tell codex to run \`git diff ${baseRef}\` (never bare git diff) as the diff under review.` : ''} ${role} Tell codex to report in the reviewer prompt's exact "### Review" format. The composed prompt must be fully self-contained: paste the reviewer prompt text and lens definitions themselves — never instruct codex to read files under ~/.claude.
 3. ${reviewer === 'codex'
-    ? codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`, lens ? CODEX_LENS_MODEL[lens] : CODEX_REREVIEW_MODEL)
+    ? codexWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`, CODEX_MODEL)
     : fireworksWrapperRules(lens ? `code-r${round}-${lens}` : `code-r${round}`, lens ? FIREWORKS_LENS_MODEL[lens] : FIREWORKS_REREVIEW_MODEL)}
 ${appliedNote}${disputedNote}${declinedNote}${deviationsNote}
 Structured output:
