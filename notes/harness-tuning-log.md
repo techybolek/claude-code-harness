@@ -6,6 +6,29 @@ Rolling log of reviewer/panel evaluations and the harness changes they produced.
 
 ---
 
+## 2026-10-24 — Software-factory gap analysis: assembly line, not yet a factory
+
+**Trigger:** "do I have a software factory?" — harness vs 2026 practice (StrongDM/Delinea scenario validation, Pulumi's 7 rules, Firecrawl's intake→isolation→verify→merge→feedback line). Plan fact-checked by `/exec:review-plan` (3/3 codex NEEDS_WORK, all findings accepted).
+
+**Verdict:** spec → implement → cross-model review works; the line neither runs without the user (manual kickoff, laptop, sequential) nor guarantees its own output. czub already has real-DB Playwright E2E, a local AltStars mock, and PR CI — the gap is not missing tests but that the ship never runs them (`validate: "off"`) and commits even when review is `UNRESOLVED` (0005/0006/0007 shipped "code NOT reviewed", pre-Fireworks-fallback).
+
+**Roadmap** (none implemented):
+1. Fail closed — `UNRESOLVED` review stops the ship, no commit.
+2. Behaviour at the gate — ship's review runs existing unit+E2E (`validate: "targeted"`); held-out scenarios only if overfitting shows, stored outside the worktree (implementer has `Read(*)`).
+3. Approved intake queue — user-approved specs, headless/scheduled ship with explicit spec path; move the `docs(spec)` stub commit off the base branch.
+4. PR as output — push + PR with review report; CI is the automatic gate, user is the merge gate (GitHub Free: no branch protection).
+5. Metrics — one line per ship: cost, time, findings, merged/reverted, human minutes; headline = human minutes per merged spec.
+6. Parallel ships — per-ship E2E lane/schema in code, non-racing `@example.test` purge, local-only env.
+7. Cloud — after credential/env boundaries are defined.
+
+Steps 1–2 = output trustworthy without the user; 3–4 = runs without the user.
+
+### Open items
+- [ ] Steps 1–7 above.
+- [ ] Separate chore: re-review 0005/0006/0007 branches.
+
+---
+
 ## 2026-09-18 — /ralph:ship: single kickoff, run-flow archived
 
 **Trigger:** retro of the 2026-09-17 czub-subscription day (0004 decouple-admin-identity). The chain that actually ran was design chat → spec → `/ralph:strategic-plan` → `/ralph:continue-dev` in the interactive session (2 compactions, 75 min tree lock) → three concurrent chats in the same working tree → a wrong `exec:review-panel` launch corrected to `review-flow-only`, which then swallowed an unrelated purge commit as plan deviation #8 and ended UNRESOLVED on a transient codex outage.
