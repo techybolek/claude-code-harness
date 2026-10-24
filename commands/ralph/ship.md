@@ -1,12 +1,12 @@
 ---
 name: ship
-description: One kickoff from spec to reviewed branch, and the resume path for a stopped run — implement (ralph-flow, isolated worktree; the implementer writes its own tasks.md) → codex review & fix (review-flow-only). No argument = the newest spec under SPEC/.
+description: One kickoff from spec to reviewed PR, and the resume path for a stopped run — implement (ralph-flow, isolated worktree; the implementer writes its own tasks.md) → codex review & fix (review-flow-only). No argument = the newest spec under SPEC/.
 argument-hint: [spec-path]
 ---
 
 You are a thin orchestrator. You resolve the spec, create the task folder,
 provision a worktree, run the Ralph implement loop, run the codex review loop,
-commit the reviewed state, and report. You never edit code or docs yourself
+commit the reviewed state, open the PR, and report. You never edit code or docs yourself
 (beyond the one-line `tasks.md` stub in Step 2). A full run takes 1–3 h and this session must stay
 alive throughout: run it in tmux with permissions that let agents write to the
 worktree (`--dangerously-skip-permissions`).
@@ -110,7 +110,22 @@ printf 'REVIEW_VERDICT: %s' '<review result JSON verbatim>' | python3 ~/.claude/
   "$PROJECT_ROOT/SPEC/ACTIVE/<task>/review-findings.md" <task> ralph/<task> "$BASE_BRANCH" "$BASE_REF" "$(date '+%Y-%m-%d %H:%M:%S %Z')"
 ```
 
-## Step 7 — Report
+## Step 7 — PR
+
+Open a PR only when the review status is `COMPLETE` and `review` starts with
+`PASS` — an `UNRESOLVED` or `VALIDATION_FAILED` branch never reaches a PR; report
+it and STOP after Step 8.
+
+`HOOK=~/.claude/scripts/ralph/pr-hooks/$(echo "$PROJECT_ROOT" | tr / -).sh` — not
+executable → skip; the branch stays local (report says so).
+
+`PR_URL=$("$HOOK" "$WORKTREE" ralph/<task> "$BASE_BRANCH" "<title>" "$PROJECT_ROOT/SPEC/ACTIVE/<task>/review-findings.md" "<abs spec>")`
+— `<title>`: a conventional-commit subject for the whole feature, from the spec's
+title (its first `#` heading — read only that line). The hook pushes, opens the PR into `BASE_BRANCH` (idempotent: an open PR
+is reported, not duplicated) and prints only its URL. Failure → report the
+hook's stderr; the commit stands and a resume re-runs this step.
+
+## Step 8 — Report
 
 ```
 ## Ship summary
@@ -122,7 +137,8 @@ printf 'REVIEW_VERDICT: %s' '<review result JSON verbatim>' | python3 ~/.claude/
 - Plan deviations — HUMAN RULING REQUIRED: <list or None>
 - Unresolved: <list or None>
 - Findings report: SPEC/ACTIVE/<task>/review-findings.md
-- Next: inspect and merge `ralph/<task>` from the main checkout, then
+- PR: <PR_URL, or "not opened — <reason>">
+- Next: review and merge the PR (no PR → inspect and merge `ralph/<task>` from the main checkout), then
   `~/.claude/scripts/ralph/ralph.sh --cleanup` and `git mv SPEC/ACTIVE/<task> SPEC/ARCHIVE/`.
 ```
 
@@ -140,4 +156,5 @@ say so and give the same re-run.
   share dev-server ports and databases. Run two at once only when the project's
   CLAUDE.md defines per-worktree isolation for those; otherwise sequential.
 - The two commits this command makes (a resume skips the first) — `docs(spec)` on the base branch, `fix(review)`
-  on the feature branch — are the whole of its git writes. No merges, no pushes.
+  on the feature branch — are the whole of its commits. The only push is the
+  PR hook's push of `ralph/<task>`. Never merge.
