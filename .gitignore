@@ -25,3 +25,4 @@ hooks/security-gate.sh
 !notes/*
 !README.md
 skills/synced/
+skills/.trash/
