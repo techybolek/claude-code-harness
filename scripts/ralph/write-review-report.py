@@ -68,6 +68,7 @@ def main():
         f"| Status | {verdict.get('status', '?')} |",
         f"| Validation | {verdict.get('validation', '?')} |",
         f"| Review | {verdict.get('review', '?')} |",
+        f"| Re-test after fixes | {verdict.get('retest', 'n/a')} |",
         "",
     ]
 
@@ -75,6 +76,11 @@ def main():
     if vi:
         out.append("## Validation issues\n")
         out.append(f"{vi}\n")
+
+    ri = verdict.get("retestIssues")
+    if ri:
+        out.append("## Re-test issues\n")
+        out.append(f"{ri}\n")
 
     # Deviations first: they are the only part that requires a human decision.
     out.append("## ⚠ Plan deviations — human ruling required"

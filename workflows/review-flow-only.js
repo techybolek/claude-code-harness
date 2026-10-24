@@ -5,6 +5,7 @@ export const meta = {
   phases: [
     { title: 'Validate', detail: 'off by default; targeted = only what the diff can affect; full = every command' },
     { title: 'Code review', detail: 'all-codex lens panel → single opus adjudicator (judges validity AND whether fixing is warranted, then fixes) → re-review loop; plateau after 2 fixes or 4 rounds stops' },
+    { title: 'Re-test', detail: 'only after a PASS that applied fixes: one targeted suite run over what the fixes touched' },
   ],
   model: 'claude-opus-5-5',
 }
@@ -166,8 +167,11 @@ Delta-scope skips justified this way are NOT unexecuted-criterion failures; "eve
 `
 }
 
-function validationPrompt(cmds0, mode) {
-  const diffCmd = baseRef
+function validationPrompt(cmds0, mode, retest = false) {
+  // Re-test in committed-range mode: the review fixes are exactly the uncommitted
+  // edits on top of the implementer's commits. Without baseRef they are mixed into
+  // the uncommitted feature diff, so the whole diff stays in scope.
+  const diffCmd = baseRef && !retest
     ? `git diff --name-only ${baseRef}`
     : 'git diff --name-only HEAD, plus untracked files from git status'
   const cmds = cmds0.length
@@ -184,8 +188,11 @@ function validationPrompt(cmds0, mode) {
 
   const full = `Run every command below. ${changedFiles.length ? 'This re-verify pass is DELTA-SCOPED — see the Delta scope section.' : 'No baseline was recorded, so a failure in code no task touched may be pre-existing: check git history / the base branch before counting it as a regression.'}`
 
+  const retestNote = retest
+    ? `\nThis is the post-review RE-TEST: code-review fixes changed the files below AFTER the implementer's last suite run, and each fix was checked only by its single covering test. The "already ran" premise does not hold for these files — run every suite and Runtime Verification step they can affect.\n`
+    : ''
   return `Run cross-task validation for ${planPath}. All tasks are implemented; catch cross-task regressions.
-${cwdNote}
+${cwdNote}${retestNote}
 ${cmds}
 
 ${mode === 'targeted' ? targeted : full}
@@ -392,14 +399,30 @@ if (validation !== 'FAIL') {
   }
 }
 
+// ---------- Phase: Re-test ----------
+// Fixes land after the implementer's last suite run and the adjudicator verifies
+// each only by its covering test, so a PASS over fixed code gets one targeted run
+// before anyone commits it. No fixes → the implementer's run still covers the code.
+let retest = 'SKIPPED'
+let retestIssues = null
+if (review.startsWith('PASS') && fixedFindings.length) {
+  phase('Re-test')
+  const v = await agent(validationPrompt(validationCommands, 'targeted', true), { label: 're-test after fixes', model: 'sonnet', phase: 'Re-test', schema: AGENT_RESULT })
+  retest = v?.status === 'SUCCESS' ? 'PASS' : 'FAIL'
+  retestIssues = retest === 'FAIL' ? (v?.issues ?? v?.summary ?? 'Re-test agent died.') : null
+  log(`re-test after fixes: ${retest}`)
+}
+
 // ---------- Result ----------
 return {
-  status: validation === 'FAIL' ? 'VALIDATION_FAILED' : 'COMPLETE',
+  status: validation === 'FAIL' || retest === 'FAIL' ? 'VALIDATION_FAILED' : 'COMPLETE',
   planPath,
   repoRoot,
   validate: effectiveValidate,
   validation,
   validationIssues,
+  retest,
+  retestIssues,
   review,
   reviewer,
   unresolvedFindings,

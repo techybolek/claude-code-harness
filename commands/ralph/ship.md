@@ -114,7 +114,8 @@ printf 'REVIEW_VERDICT: %s' '<review result JSON verbatim>' | python3 ~/.claude/
 
 Open a PR only when the review status is `COMPLETE` and `review` starts with
 `PASS` — an `UNRESOLVED` or `VALIDATION_FAILED` branch never reaches a PR; report
-it and STOP after Step 8.
+it and STOP after Step 8. `VALIDATION_FAILED` after a PASS means the post-fix
+re-test failed: report `retestIssues` verbatim.
 
 `HOOK=~/.claude/scripts/ralph/pr-hooks/$(echo "$PROJECT_ROOT" | tr / -).sh` — not
 executable → skip; the branch stays local (report says so).
@@ -132,7 +133,7 @@ hook's stderr; the commit stands and a resume re-runs this step.
 - Spec: <SPEC_REL>
 - Task: <task>  ·  Branch: ralph/<task>  ·  Worktree: <WORKTREE>
 - Implement: <iterations> iterations, <n> commits
-- Review: <review>  (fixed <n> · rejected <n> · declined <n>)
+- Review: <review>  (fixed <n> · rejected <n> · declined <n>)  ·  Re-test: <retest>
 - Declined (real, left unfixed): <list or None>
 - Plan deviations — HUMAN RULING REQUIRED: <list or None>
 - Unresolved: <list or None>
