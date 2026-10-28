@@ -129,7 +129,7 @@ Before the hook, write `$PROJECT_ROOT/SPEC/ACTIVE/<task>/ship.html`, the change 
 title (its first `#` heading — read only that line). The hook pushes, opens the PR into `BASE_BRANCH` (idempotent: an open PR
 is reported, not duplicated) and prints only its URL; a hook may also do project paperwork
 (work items, effort) — relay its `PASS`/`FAIL`/`WARN:` lines in the report. A FAIL
-naming a missing spec input (e.g. `**Hours:**`) → ask the user, add it, re-run the hook. Other failure → report the
+naming a missing spec input → ask the user, add it, re-run the hook. Other failure → report the
 hook's stderr; the commit stands and a resume re-runs this step.
 
 ## Step 8 — Report
