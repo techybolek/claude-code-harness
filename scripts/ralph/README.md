@@ -53,6 +53,9 @@ state is on disk; a dropped terminal loses only live output, not progress.
 `<path-slug>` = project root path with `/` → `-`, e.g.
 `-home-tromanow-PROJECTS-TP-TPV2.sh`.
 
+PR hook (`/ralph:ship` step 7): the project's own `<project>/.claude/scripts/ralph-pr-hook.sh`,
+else `pr-hooks/<path-slug>.sh` here. Project-specific paperwork belongs in the project's hook.
+
 Related slash commands (`~/.claude/commands/ralph/`): `ship` (creates the
 task folder: `tasks.md` holding only the `**Source spec:**` line — the first
 iteration writes the checklist), `continue-dev` (manual single-session

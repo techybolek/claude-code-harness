@@ -117,13 +117,19 @@ Open a PR only when the review status is `COMPLETE` and `review` starts with
 it and STOP after Step 8. `VALIDATION_FAILED` after a PASS means the post-fix
 re-test failed: report `retestIssues` verbatim.
 
-`HOOK=~/.claude/scripts/ralph/pr-hooks/$(echo "$PROJECT_ROOT" | tr / -).sh` — not
-executable → skip; the branch stays local (report says so).
+`HOOK=$PROJECT_ROOT/.claude/scripts/ralph-pr-hook.sh` (the project's own), else
+`~/.claude/scripts/ralph/pr-hooks/$(echo "$PROJECT_ROOT" | tr / -).sh` — neither executable → skip; the branch stays local (report says so).
+
+Before the hook, write `$PROJECT_ROOT/SPEC/ACTIVE/<task>/ship.html`, the change write-up a hook may use for tracker paperwork:
+`<h3>Problem</h3><p>…</p><h3>Fix</h3><p>…</p><h3>Scope</h3><p>…</p>` (bug: `Root cause` instead of
+`Scope`), terse, file paths in `<code>`, from the spec, `git -C "$WORKTREE" diff --stat "$BASE_REF"` and the review report.
 
 `PR_URL=$("$HOOK" "$WORKTREE" ralph/<task> "$BASE_BRANCH" "<title>" "$PROJECT_ROOT/SPEC/ACTIVE/<task>/review-findings.md" "<abs spec>")`
 — `<title>`: a conventional-commit subject for the whole feature, from the spec's
 title (its first `#` heading — read only that line). The hook pushes, opens the PR into `BASE_BRANCH` (idempotent: an open PR
-is reported, not duplicated) and prints only its URL. Failure → report the
+is reported, not duplicated) and prints only its URL; a hook may also do project paperwork
+(work items, effort) — relay its `PASS`/`FAIL`/`WARN:` lines in the report. A FAIL
+naming a missing spec input (e.g. `**Hours:**`) → ask the user, add it, re-run the hook. Other failure → report the
 hook's stderr; the commit stands and a resume re-runs this step.
 
 ## Step 8 — Report
