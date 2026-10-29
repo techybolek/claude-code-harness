@@ -8,7 +8,7 @@ description: Google Cloud operations guide for this environment: account/project
 ## Environment
 
 - **Account:** `toromanow@gmail.com` (active, authenticated)
-- **CLI:** `gcloud` is at `~/google-cloud-sdk/bin/gcloud` and is not on PATH in Claude sessions — call it by full path
+- **CLI:** `gcloud` is installed and authenticated — just run commands
 
 ---
 
