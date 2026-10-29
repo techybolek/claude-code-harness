@@ -26,3 +26,7 @@ Use Conventional Commits.
 - Use the `playwright-cli` skill for **interactive browsing** — JS-rendered pages, login/auth, clicking, form fill, screenshots.
 - Use the built-in `WebSearch` / `WebFetch` tools for **search and reading static pages**.
 - **Never** use `mcp__claude-in-chrome__*` tools.
+
+## Presentations
+
+- Decks/presentations/slides: always use the CGI `pptx` skill (not `anthropic-skills:pptx` or a slides artifact).

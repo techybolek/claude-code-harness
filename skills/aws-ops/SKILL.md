@@ -1,6 +1,6 @@
 ---
 name: aws-ops
-description: Universal AWS operations guide. Covers environment defaults (region, credentials), correct CLI patterns per service, resource discovery, deployment (SAM/CloudFormation), Bedrock/Bedrock Agent, and safe cleanup. Load this before any AWS task.
+description: AWS operations guide for this environment: region/credential defaults, aws CLI patterns, SAM/CloudFormation deploys, Bedrock. Load before any AWS or aws CLI task.
 ---
 
 # AWS Operations — Universal Guide

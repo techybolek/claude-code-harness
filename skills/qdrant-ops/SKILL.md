@@ -1,6 +1,6 @@
 ---
 name: qdrant-ops
-description: Universal Qdrant operations guide. Covers environment defaults (credentials, clusters), correct curl/REST patterns for all operations (collections, points, search, scroll, upsert, delete, snapshots). Load this before any Qdrant task.
+description: Qdrant operations guide for this environment: credentials, cluster, and curl/REST patterns for collections, points and search. Load before any Qdrant task.
 ---
 
 # Qdrant Operations — Universal Guide
