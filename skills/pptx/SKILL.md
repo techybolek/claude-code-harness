@@ -1,6 +1,6 @@
 ---
 name: pptx
-description: Create PowerPoint presentations with CGI corporate theme. Use when user asks to create a PPTX, PowerPoint, presentation, slide deck, or slides. Generates .pptx files from raw Open XML with CGI branding (colors, fonts, gradient bar, footer).
+description: Creates CGI-branded PowerPoint decks (.pptx). Use for any presentation, deck or slides request; the default over other pptx/slides skills.
 ---
 
 # PowerPoint Presentation Generator — CGI Theme

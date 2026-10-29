@@ -8,37 +8,7 @@ description: Google Cloud operations guide for this environment: account/project
 ## Environment
 
 - **Account:** `toromanow@gmail.com` (active, authenticated)
-- **CLI:** `gcloud` is installed and authenticated — just run commands
-- **Default project:** `docker-app-20250605` — where all active services live
-
----
-
-## Known Projects
-
-| Project ID | Name | Has Resources |
-|---|---|---|
-| `docker-app-20250605` | Docker App | ✅ All Cloud Run services |
-| `gen-lang-client-0766375358` | Generative Language Client | — |
-| `integromat-415100` | integromat | — |
-| `supabase1-467000` | Supabase1 | — |
-| `tptest1-413214` | tptest1 | — |
-| `tro-android-1` | tro-android-1 | — |
-| `vocal-tracer-412722` | tut1 | — |
-
-## Known Cloud Run Services (`docker-app-20250605`)
-
-| Service | Status | URL |
-|---|---|---|
-| `childcare-assistant` | ✅ Running | `childcare-assistant-usozgowdxq-uc.a.run.app` |
-| `flashcard-wizard` | ✅ Running | `flashcard-wizard-usozgowdxq-uc.a.run.app` |
-| `tsai-services` | ❌ Not ready | `tsai-services-usozgowdxq-uc.a.run.app` |
-| `tsc-doc-img` | ❌ Not ready | — |
-| `tsr-auth-service` | ✅ Running | `tsr-auth-service-usozgowdxq-uc.a.run.app` |
-| `tsr-datagrid-service` | ✅ Running | `tsr-datagrid-service-usozgowdxq-uc.a.run.app` |
-| `tsr-frontend` | ✅ Running | `tsr-frontend-usozgowdxq-uc.a.run.app` |
-| `tsr-testcase-service` | ✅ Running | `tsr-testcase-service-usozgowdxq-uc.a.run.app` |
-| `tx-childcare-backend` | ✅ Running | `tx-childcare-backend-usozgowdxq-uc.a.run.app` |
-| `tx-childcare-frontend` | ✅ Running | `tx-childcare-frontend-usozgowdxq-uc.a.run.app` |
+- **CLI:** `gcloud` is at `~/google-cloud-sdk/bin/gcloud` and is not on PATH in Claude sessions — call it by full path
 
 ---
 
@@ -49,15 +19,15 @@ description: Google Cloud operations guide for this environment: account/project
 gcloud projects list
 
 # List Cloud Run services in default project
-gcloud run services list --project=docker-app-20250605 --format="table(metadata.name,status.url,status.conditions[0].status)"
+gcloud run services list --project=<project> --format="table(metadata.name,status.url,status.conditions[0].status)"
 
 # List services across ALL projects
-for proj in docker-app-20250605 gen-lang-client-0766375358 integromat-415100 supabase1-467000 tptest1-413214 tro-android-1 vocal-tracer-412722; do
+for proj in $(gcloud projects list --format="value(projectId)"); do
   echo "=== $proj ===" && gcloud run services list --project=$proj --format="table(metadata.name,status.url)" 2>/dev/null
 done
 
 # List all resources in a project (broad)
-gcloud asset search-all-resources --scope=projects/docker-app-20250605 --format="table(name,assetType)" 2>/dev/null
+gcloud asset search-all-resources --scope=projects/<project> --format="table(name,assetType)" 2>/dev/null
 ```
 
 ---
@@ -84,55 +54,55 @@ gcloud asset search-all-resources --scope=projects/docker-app-20250605 --format=
 
 ```bash
 # Describe a service (get full details, env vars, etc.)
-gcloud run services describe <service-name> --project=docker-app-20250605 --region=us-central1
+gcloud run services describe <service-name> --project=<project> --region=<region>
 
 # View logs
 gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=<service-name>" \
-  --project=docker-app-20250605 --limit=50 --format="table(timestamp,textPayload)"
+  --project=<project> --limit=50 --format="table(timestamp,textPayload)"
 
 # Tail logs (stream)
-gcloud beta run services logs tail <service-name> --project=docker-app-20250605 --region=us-central1
+gcloud beta run services logs tail <service-name> --project=<project> --region=<region>
 
 # Deploy a new revision from existing image
 gcloud run deploy <service-name> \
   --image <image-url> \
-  --project=docker-app-20250605 \
-  --region=us-central1
+  --project=<project> \
+  --region=<region>
 
 # Update env vars
 gcloud run services update <service-name> \
   --set-env-vars KEY=VALUE \
-  --project=docker-app-20250605 --region=us-central1
+  --project=<project> --region=<region>
 
 # Delete a service
-gcloud run services delete <service-name> --project=docker-app-20250605 --region=us-central1
+gcloud run services delete <service-name> --project=<project> --region=<region>
 ```
 
 ### Artifact Registry (container images)
 
 ```bash
 # List repositories
-gcloud artifacts repositories list --project=docker-app-20250605
+gcloud artifacts repositories list --project=<project>
 
 # List images in a repo
-gcloud artifacts docker images list <region>-docker.pkg.dev/docker-app-20250605/<repo>
+gcloud artifacts docker images list <region>-docker.pkg.dev/<project>/<repo>
 ```
 
 ### Secrets
 
 ```bash
 # List secrets
-gcloud secrets list --project=docker-app-20250605
+gcloud secrets list --project=<project>
 
 # Get a secret value
-gcloud secrets versions access latest --secret=<secret-name> --project=docker-app-20250605
+gcloud secrets versions access latest --secret=<secret-name> --project=<project>
 ```
 
 ### Cloud Storage
 
 ```bash
 # List buckets
-gcloud storage buckets list --project=docker-app-20250605
+gcloud storage buckets list --project=<project>
 
 # Upload / download
 gcloud storage cp file.txt gs://my-bucket/
@@ -154,8 +124,8 @@ gcloud storage cp gs://my-bucket/file.txt .
 
 | Gotcha | Detail |
 |---|---|
-| Region required for Cloud Run | Always pass `--region=us-central1` (or wherever deployed) |
-| Default project | Set with `gcloud config set project docker-app-20250605` to avoid repeating `--project` |
+| Region required for Cloud Run | Always pass `--region=<region>` (or wherever deployed) |
+| Default project | Set with `gcloud config set project <project>` to avoid repeating `--project` |
 | `gcloud beta` for log tailing | `gcloud beta run services logs tail` requires beta component |
-| Image URL format | `us-central1-docker.pkg.dev/<project>/<repo>/<image>:<tag>` |
+| Image URL format | `<region>-docker.pkg.dev/<project>/<repo>/<image>:<tag>` |
 | Service account auth | For CI/CD use `gcloud auth activate-service-account --key-file=key.json` |

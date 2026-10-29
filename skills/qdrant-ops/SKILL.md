@@ -20,17 +20,6 @@ KEY="${QDRANT_API_KEY}"
 
 ---
 
-## Known Collections (as of 2026-03)
-
-| Name | Points | Vector size | Notes |
-|---|---|---|---|
-| `tshelpdesk` | 688 | 1024-dim Cosine | TestSavvy helpdesk PDF chunks |
-| `tsjobaid_1` | 182 | 1024-dim Cosine | TestSavvy job aids PDF chunks |
-| `tro-child-hybrid-v1` | 1,688 | 1536-dim Cosine (dense) | TX early learning docs, fully indexed, hybrid |
-| `test_collection_7ebef848` | 205 | 384-dim Cosine | Synthetic batch test data |
-
----
-
 ## REST API Patterns
 
 All operations use `curl`. Pipe through `python3 -m json.tool` for readable output.
@@ -136,7 +125,7 @@ curl -s -X POST -H "api-key: ${KEY}" -H "Content-Type: application/json" \
   "${BASE}/collections/<name>/points/delete" \
   -d '{
     "filter": {
-      "must": [{"key": "document_name", "match": {"value": "tshelpdesk"}}]
+      "must": [{"key": "document_name", "match": {"value": "<doc-a>"}}]
     }
   }' | python3 -m json.tool
 ```
@@ -179,7 +168,7 @@ curl -s -X POST -H "api-key: ${KEY}" -H "Content-Type: application/json" \
 }'
 ```
 
-### Search with named vector (hybrid collections like tro-child-hybrid-v1)
+### Search with named vector (hybrid collections)
 ```bash
 -d '{
   "vector": {"name": "dense", "vector": [...]},
@@ -212,8 +201,8 @@ Filters go inside `"filter": { ... }` blocks. Conditions combine with `must` (AN
     {"key": "chunk_index", "range": {"gte": 0, "lte": 100}}
   ],
   "should": [
-    {"key": "document_name", "match": {"value": "tshelpdesk"}},
-    {"key": "document_name", "match": {"value": "tsjobaid"}}
+    {"key": "document_name", "match": {"value": "<doc-a>"}},
+    {"key": "document_name", "match": {"value": "<doc-b>"}}
   ]
 }
 ```
@@ -282,10 +271,10 @@ BASE="${QDRANT_API_URL}" && KEY="${QDRANT_API_KEY}"
 curl -s -H "api-key: $KEY" "$BASE/collections" | python3 -m json.tool
 
 # Details on a specific collection
-curl -s -H "api-key: $KEY" "$BASE/collections/tro-child-hybrid-v1" | python3 -m json.tool
+curl -s -H "api-key: $KEY" "$BASE/collections/<collection>" | python3 -m json.tool
 
 # Sample points from a collection
 curl -s -X POST -H "api-key: $KEY" -H "Content-Type: application/json" \
-  "$BASE/collections/tro-child-hybrid-v1/points/scroll" \
+  "$BASE/collections/<collection>/points/scroll" \
   -d '{"limit": 3, "with_payload": true, "with_vector": false}' | python3 -m json.tool
 ```
