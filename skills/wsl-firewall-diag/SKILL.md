@@ -1,6 +1,6 @@
 ---
 name: wsl-firewall-diag
-description: Diagnose network failures, hung commands, and silent timeouts on hardened WSL-2 distros that run a default-DROP outbound iptables firewall (Anthropic-style `init-firewall.sh` allow-list). TRIGGER when any network-dependent command (npm/npx install, pnpm install, pip install, docker pull, curl, wget, playwright install, gcloud auth, etc.) appears stuck, produces no output for >30s, times out at exactly 5s/8s/10s, or fails to connect to a remote host. ALSO use proactively before retrying any network-bound command that just failed — a retry without diagnosis is wasted minutes. SKIP for app-level errors (HTTP 4xx/5xx body), auth failures, JSON parse errors, or code bugs unrelated to the network path.
+description: Diagnoses hung or failing network commands (installs, pulls, curl) on this WSL-2 distro's default-DROP iptables firewall. Use when a network command stalls, times out at 5/8/10s, or can't connect — before retrying. Not for HTTP 4xx/5xx, auth or code errors.
 ---
 
 # WSL-2 Firewall Diagnostic

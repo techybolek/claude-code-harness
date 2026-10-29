@@ -40,4 +40,8 @@ Map each friction point / miss from Part 1 to a concrete change. Tag every recom
 - `[command]` — a missing or unclear command.
 - `[instruction]` — a CLAUDE.md gap or contradiction that caused a mistake.
 
+Pick the lightest target that prevents the miss: one right answer → hook/script (`[harness]`); always-on one-liner → `[instruction]`; judgment plus local facts → `[skill]`. Propose a skill/rule only for misses that look systematic, not one-off — every line costs context forever.
+
+Skill `description` fixes: ≤ ~250 chars, what it does + when, in the words a user would type; no example lists; add "Not for X; use Y" only for a real near miss.
+
 For each: state the change, the file it touches, and the one-line reason tied to the evidence. Show proposed wording or a diff sketch when it clarifies — but **apply nothing**. If a run was clean with no improvements warranted, say so plainly rather than inventing recommendations.

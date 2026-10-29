@@ -1,6 +1,6 @@
 ---
 name: gcp-ops
-description: Universal Google Cloud (GCP) operations guide. Covers environment defaults (account, projects), correct gcloud CLI patterns per service, resource discovery, Cloud Run management, and safe cleanup. Load this before any GCP task. Use whenever the user asks about Google Cloud resources, Cloud Run, GCP projects, deployments, or anything involving the gcloud CLI — even if they don't say "GCP" explicitly.
+description: Google Cloud operations guide for this environment: account/project defaults, gcloud patterns, Cloud Run. Load before any GCP or gcloud task.
 ---
 
 # GCP Operations — Universal Guide

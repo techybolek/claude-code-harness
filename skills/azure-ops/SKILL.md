@@ -1,6 +1,6 @@
 ---
 name: azure-ops
-description: Universal Azure operations guide. Covers environment defaults (subscription, credentials), correct az CLI patterns per service, resource discovery, Azure OpenAI/AI Services management, Container Apps deployment (including WSL2 gotchas), and safe cleanup. Load this before any Azure task. Use whenever the user asks about Azure resources, deployments, models, Cognitive Services, OpenAI endpoints, Container Apps, resource groups, or anything involving the az CLI — even if they don't say "Azure" explicitly.
+description: Azure operations guide for this environment: subscription defaults, az CLI patterns, deployment and safe cleanup. Load before any task involving Azure resources, services or the az CLI.
 ---
 
 # Azure Operations — Universal Guide
@@ -8,17 +8,8 @@ description: Universal Azure operations guide. Covers environment defaults (subs
 ## Environment
 
 - **Subscription:** `Azure subscription 1` (`294759b8-daae-4612-98f2-6f0350f95c4f`)
-- **CLI:** `az` is installed and authenticated — just run commands
+- **CLI:** `az` is installed and normally authenticated; on an `AADSTS` token error, ask the user to run `! az login` instead of retrying
 - **Default subscription is already set** — no need to pass `--subscription` unless switching
-
----
-
-## Known Resources
-
-| Resource | Kind | Resource Group | Deployments |
-|---|---|---|---|
-| `tro-cf-resource-1` | AIServices | `tro-cf-resource-group-1` | `Cohere-rerank-v4.0-fast` (v1, capacity 20) |
-| `openai-eval-tomasz` | OpenAI | `rg-openai-eval` | `gpt-4.1-mini` (2025-04-14, capacity 100) |
 
 ---
 
@@ -67,16 +58,9 @@ az resource list --resource-group <rg> \
 ### List model deployments
 
 ```bash
-# tro-cf-resource-1 (AIServices)
 az cognitiveservices account deployment list \
-  --name tro-cf-resource-1 \
-  --resource-group tro-cf-resource-group-1 \
-  -o table
-
-# openai-eval-tomasz (OpenAI)
-az cognitiveservices account deployment list \
-  --name openai-eval-tomasz \
-  --resource-group rg-openai-eval \
+  --name <resource-name> \
+  --resource-group <rg> \
   -o table
 ```
 
@@ -120,12 +104,12 @@ az cognitiveservices account deployment delete \
 ```bash
 # Get endpoint first
 ENDPOINT=$(az cognitiveservices account show \
-  --name openai-eval-tomasz --resource-group rg-openai-eval \
+  --name <resource-name> --resource-group <rg> \
   --query properties.endpoint -o tsv)
 
 # Chat completion
 az rest --method post \
-  --url "${ENDPOINT}openai/deployments/gpt-4.1-mini/chat/completions?api-version=2024-02-01" \
+  --url "${ENDPOINT}openai/deployments/<deployment-name>/chat/completions?api-version=2024-02-01" \
   --body '{"messages":[{"role":"user","content":"Hello"}]}'
 ```
 
