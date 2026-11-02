@@ -8,14 +8,25 @@ Evaluate how an agent performed on a task, then recommend concrete changes to th
 
 ## Resolve the target from `$ARGUMENTS`
 
-- **blank** → reflect on **the current conversation** (you already have its full history in context; do not parse any file).
-- **`last` / `recent`** → the most recently modified `.jsonl` in `~/.claude/projects/<encoded-cwd>/`, excluding the current session.
-- **`<session-id>`** → that specific `~/.claude/projects/<encoded-cwd>/<id>.jsonl`.
-- **`subagent`** → the most recent `isSidechain` run (records with `"isSidechain":true`) in the current project's transcripts.
+First determine the harness you are running in:
+
+```bash
+test "${PI_CODING_AGENT:-}" = true && echo pi || echo claude
+```
 
 `<encoded-cwd>` = the absolute cwd with every `/` replaced by `-` (e.g. `/home/me/proj` → `-home-me-proj`). Compute it: `pwd | sed 's:/:-:g'`.
 
-For file-based targets, parse the `.jsonl` to reconstruct: the user's goal, the assistant's turns, every tool call and result, errors, hook rejections, permission denials, and the final outcome. Use `jq` to slice it; don't dump the whole file. For `subagent`, isolate the sidechain block.
+| Harness | Transcript root | Shape |
+|---|---|---|
+| Claude Code | `~/.claude/projects/<encoded-cwd>/<id>.jsonl` | records may carry `"isSidechain":true` for subagent runs |
+| Pi | `~/.pi/agent/sessions/<encoded-cwd>/*.jsonl` | filename `<ISO-with-dashes>_<uuid>.jsonl`; first line `{"type":"session","id":…,"cwd":…}`; no `isSidechain` flag |
+
+- **blank** → reflect on **the current conversation** (you already have its full history in context; do not parse any file).
+- **`last` / `recent`** → the most recently modified `.jsonl` in your harness's root, excluding the current session. Under pi the current session is `$PI_SESSION_FILE`; its directory is the root.
+- **`<session-id>`** → that specific transcript in your harness's root. Under pi the id is the uuid after the `_` in the filename (`$PI_SESSION_ID` for the current session).
+- **`subagent`** → Claude Code only: the most recent `isSidechain` run. Pi records no such flag — say so and stop rather than guessing which run was delegated.
+
+For file-based targets, parse the `.jsonl` to reconstruct: the user's goal, the assistant's turns, every tool call and result, errors, hook rejections, permission denials, and the final outcome. Use `jq` to slice it; don't dump the whole file. Under pi, messages are `{"type":"message",…,"message":{"role":…}}` entries; skip `model_change`, `thinking_level_change`, and other non-message records. For `subagent`, isolate the sidechain block.
 
 > **Self-reflection blind spot:** when the target is the current conversation, you are grading your own work in the same context — you will be lenient and cannot see what you never noticed. Deliberately adopt a skeptical *external reviewer* stance: assume there were missed skills and wasted steps, and hunt for them.
 
@@ -35,12 +46,13 @@ Skip rubric items with nothing noteworthy. Be specific and honest; this is a cri
 
 Map each friction point / miss from Part 1 to a concrete change. Tag every recommendation by target and order them by impact (highest first). To ground a recommendation, **Read** the relevant existing file first (the skill's `SKILL.md`, the command, `CLAUDE.md`, `settings.json`) so the suggestion fits what's actually there.
 
-- `[harness]` — `settings.json` permission allowlist entries (for prompts that recurred), hooks, env.
+- `[harness]` — `settings.json` permission allowlist entries (for prompts that recurred), hooks, env. Under pi the equivalents are extensions, the `resources` arrays in `settings.json`, and env.
 - `[skill]` — a missing skill worth creating, a skill that should have triggered but didn't (fix its `description`), or outdated/wrong skill content.
 - `[command]` — a missing or unclear command.
 - `[instruction]` — a CLAUDE.md gap or contradiction that caused a mistake.
+- `[code]` — a change in the project itself: lint rule, type/invariant, test, CI check, or cleaning up a bad pattern the agent copied.
 
-Pick the lightest target that prevents the miss: one right answer → hook/script (`[harness]`); always-on one-liner → `[instruction]`; judgment plus local facts → `[skill]`. Propose a skill/rule only for misses that look systematic, not one-off — every line costs context forever.
+Prefer enforcement over prose — pick the highest target that prevents the miss: makes the mistake impossible or fail fast in the project → `[code]`; one right answer in agent behavior → hook/script (`[harness]`); always-on one-liner → `[instruction]`; judgment plus local facts → `[skill]`. Propose a skill/rule only for misses that look systematic, not one-off — every line costs context forever.
 
 Skill `description` fixes: ≤ ~250 chars, what it does + when, in the words a user would type; no example lists; add "Not for X; use Y" only for a real near miss.
 

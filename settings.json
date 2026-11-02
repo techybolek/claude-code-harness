@@ -1,10 +1,17 @@
 {
   "env": {
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "280000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "500000",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2"
   },
   "includeCoAuthoredBy": false,
   "permissions": {
+    "deny": [
+      "Bash(ssh *root@*)"
+    ],
+    "ask": [
+      "Edit(**/tp-deploy-boxes/scripts/**)",
+      "Edit(**/infra/hosts.json)"
+    ],
     "defaultMode": "auto"
   },
   "model": "sonnet",
@@ -65,7 +72,16 @@
   },
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": false,
-    "skill-creator@claude-plugins-official": false
+    "skill-creator@claude-plugins-official": false,
+    "runpod@runpod": true
+  },
+  "extraKnownMarketplaces": {
+    "runpod": {
+      "source": {
+        "source": "github",
+        "repo": "runpod/runpod-plugins-official"
+      }
+    }
   },
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
