@@ -1,6 +1,6 @@
 ---
 name: qdrant-ops
-description: Qdrant operations guide for this environment: credentials, cluster, and curl/REST patterns for collections, points and search. Load before any Qdrant task.
+description: "Qdrant operations guide for this environment: credentials, cluster, and curl/REST patterns for collections, points and search. Load before any Qdrant task."
 ---
 
 # Qdrant Operations — Universal Guide

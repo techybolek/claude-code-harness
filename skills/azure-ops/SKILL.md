@@ -1,6 +1,6 @@
 ---
 name: azure-ops
-description: Azure operations guide for this environment: subscription defaults, az CLI patterns, deployment and safe cleanup. Load before any task involving Azure resources, services or the az CLI.
+description: "Azure operations guide for this environment: subscription defaults, az CLI patterns, deployment and safe cleanup. Load before any task involving Azure resources, services or the az CLI."
 ---
 
 # Azure Operations — Universal Guide

@@ -1,6 +1,6 @@
 ---
 name: gcp-ops
-description: Google Cloud operations guide for this environment: account/project defaults, gcloud patterns, Cloud Run. Load before any GCP or gcloud task.
+description: "Google Cloud operations guide for this environment: account/project defaults, gcloud patterns, Cloud Run. Load before any GCP or gcloud task."
 ---
 
 # GCP Operations — Universal Guide
