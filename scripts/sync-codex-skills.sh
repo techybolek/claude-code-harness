@@ -3,7 +3,7 @@
 #   global:  ~/.agents/skills/<name> -> ~/.claude/skills/.../<name>   (synced plugin skills: anthropic-<name>,
 #            skipped when a user skill has the same name)
 #   project: <proj>/.agents/skills -> ../.claude/skills               (git-excluded; per-skill links if .agents/skills already exists)
-# Idempotent; never replaces an existing entry. Re-run after adding a skill.
+# Skills tagged `harness: claude` are skipped. Idempotent; never replaces an existing entry. Re-run after adding a skill.
 # Usage: sync-codex-skills.sh [project-dir ...]   (default: every project under ~/PROJECTS with .claude/skills)
 set -euo pipefail
 
@@ -15,8 +15,13 @@ link() { # target linkpath
 # --- global ---
 G=~/.agents/skills
 mkdir -p "$G"
-find -L ~/.claude/skills -name SKILL.md -printf '%h\n' | while read -r d; do
+find -L ~/.claude/skills -name '.*' -prune -o -name SKILL.md -printf '%h\n' | while read -r d; do
 	n=$(basename "$d")
+	# `harness: claude` in frontmatter = Claude-only; never export (and unexport if it was)
+	if awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^harness: *claude/{h=1} END{exit !h}' "$d/SKILL.md"; then
+		[ -L "$G/$n" ] && rm "$G/$n" && echo "unexported Claude-only $G/$n"
+		continue
+	fi
 	if [[ $d == */skills/synced/* ]]; then
 		# a user skill of the same name wins (pi/Codex match by frontmatter name, not link name)
 		[ -e ~/.claude/skills/"$n" ] && { [ -L "$G/anthropic-$n" ] && rm "$G/anthropic-$n" && echo "unlinked shadowing $G/anthropic-$n"; continue; }

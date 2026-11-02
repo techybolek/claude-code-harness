@@ -1,4 +1,5 @@
 ---
+harness: claude
 name: continue-dev
 description: Implement or resume a SPEC/ACTIVE task in this session
 argument-hint: [optional task folder name, or a spec path to start a new task]

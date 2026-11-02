@@ -1,4 +1,5 @@
 ---
+harness: claude
 description: "Report-only Codex lens panel: 3 parallel codex reviewers over uncommitted changes, findings saved to a markdown report next to the plan — no triage, no fixer"
 ---
 

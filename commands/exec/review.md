@@ -1,4 +1,5 @@
 ---
+harness: claude
 description: "Ad-hoc in-session review: codex lens panel over this session's changes, findings triaged here with the user — no spec needed"
 ---
 

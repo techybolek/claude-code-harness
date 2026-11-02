@@ -1,4 +1,5 @@
 ---
+harness: claude
 name: ship
 description: One kickoff from spec to reviewed PR, and the resume path for a stopped run — implement (ralph-flow, isolated worktree; the implementer writes its own tasks.md) → codex review & fix (review-flow-only). No argument = the newest spec under SPEC/.
 argument-hint: [spec-path]

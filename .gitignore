@@ -26,3 +26,5 @@ hooks/security-gate.sh
 !README.md
 skills/synced/
 skills/.trash/
+!pi/
+!pi/**

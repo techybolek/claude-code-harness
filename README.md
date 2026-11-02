@@ -24,6 +24,25 @@ parts that are useful to you.
 
 ---
 
+## Other harnesses (pi, Codex)
+
+This repo is the single source for every agent harness I use. Each harness loads only what it is pointed at, so files sitting here don't leak into the others.
+
+| Where | What | Loaded by |
+|---|---|---|
+| `CLAUDE.md`, `skills/`, `scripts/` | shared, tool-neutral | all (skills exported to `~/.agents/skills` by `scripts/sync-codex-skills.sh`) |
+| `commands/`, `workflows/`, `hooks/`, `settings.json` | Claude-specific | Claude; pi also runs `commands/` through the bridge |
+| `pi/` | pi-only: `extensions/` (incl. `claude-bridge.ts`), later `prompts/`, `skills/` | pi, via `"extensions"` etc. in `~/.pi/agent/settings.json` |
+| `codex/` (when needed) | Codex-only: prompts, hooks | Codex, via symlinks in `~/.codex` |
+
+Rules:
+- Authored content lives here. `~/.pi`, `~/.codex`, `~/.agents` hold only pointers (settings paths, symlinks), machine state (auth, sessions, trusted projects) and vendor-managed files.
+- A command or skill that needs Claude-only tools (Workflow, Agent, AskUserQuestion) carries `harness: claude` in its frontmatter: the pi bridge and the skill export skip it.
+- Harness-specific steps go into a script; the skill or command just calls it.
+- `scripts/verify-harness.sh` enforces the above.
+
+---
+
 ## Install
 
 The commands reference each other by **absolute `~/.claude/` path**. They must live in your home

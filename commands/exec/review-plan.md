@@ -1,4 +1,5 @@
 ---
+harness: claude
 description: "Pre-implementation review: codex lens panel fact-checks this session's research findings and critiques the proposed plan, triaged here with the user — nothing is implemented"
 ---
 

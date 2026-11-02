@@ -44,7 +44,7 @@ def script_of(cmd):
     for tok in cmd.split():
         if tok in ("bash", "sh", "python3", "python", "node", "npx") or tok.startswith("-"):
             continue
-        return tok
+        return tok.strip("'\"")
     return cmd
 for event, groups in cfg.get("hooks", {}).items():
     for g in groups:
@@ -83,6 +83,9 @@ for d in "$CLAUDE_DIR"/skills/*/; do
     [ "$name" = synced ] && continue
     if [ ! -f "$d/SKILL.md" ]; then
         fail "skill '$name' has no SKILL.md" "add $d/SKILL.md or remove the directory"
+    elif ! python3 -c "import re,sys,yaml; yaml.safe_load(re.match(r'^---\n(.*?)\n---\n', open(sys.argv[1]).read(), re.S).group(1))" "$d/SKILL.md" 2>/dev/null; then
+        # Claude Code tolerates bad YAML; pi/Codex drop the skill silently (e.g. unquoted ": " in description)
+        fail "skill '$name' frontmatter is not valid YAML" "quote the description: description: \"...\""
     elif ! grep -q '^description:' "$d/SKILL.md"; then
         warn "skill '$name' SKILL.md has no 'description:' frontmatter — it will never auto-trigger"
     fi
@@ -161,6 +164,43 @@ if command -v node >/dev/null 2>&1; then
 else
     warn "node not on PATH — workflow scripts not syntax-checked"
 fi
+
+# --- 9. cross-harness layout (pi + Codex share this repo) ---------------------
+# ~/.claude is the single source; ~/.agents/skills is a generated export
+# (sync-codex-skills.sh) except installer-managed skills in .skill-lock.json.
+# A skill whose real dir lives outside ~/.claude is untracked by git.
+lock="$HOME/.agents/.skill-lock.json"
+for l in "$CLAUDE_DIR"/skills/*; do
+    [ -L "$l" ] || continue
+    n=$(basename "$l")
+    if ! python3 -c "import json,sys; sys.exit(0 if sys.argv[2] in json.load(open(sys.argv[1]))['skills'] else 1)" "$lock" "$n" 2>/dev/null; then
+        fail "skill '$n' is a symlink out of ~/.claude (untracked, not installer-managed)" \
+             "mv \"\$(readlink -f $l)\" $l (after rm $l), then run scripts/sync-codex-skills.sh"
+    fi
+done
+ok "skills: no untracked out-of-repo sources"
+
+# Exported links must not point at trashed skills.
+for l in "$HOME"/.agents/skills/*; do
+    [ -L "$l" ] && readlink "$l" | grep -q '/skills/\.' && \
+        fail "~/.agents/skills/$(basename "$l") exports a dot-dir skill: $(readlink "$l")" "rm $l"
+done
+
+# Commands pi sees (no `harness: claude`) must not need Claude-only tools.
+cl_bad=0
+while IFS= read -r f; do
+    awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {exit} fm && /^harness: *claude/ {found=1} END {exit !found}' "$f" && continue
+    if grep -qE 'Workflow\W{0,3}(tool|\()|Agent\W{0,3}tool|AskUserQuestion|subagent_type|ToolSearch|ExitPlanMode|SendMessage' "$f"; then
+        fail "$(basename "$f") uses Claude-only tools but is exposed to pi" "add 'harness: claude' to its frontmatter, or make it tool-neutral"
+        cl_bad=1
+    fi
+done < <(find "$CLAUDE_DIR/commands" -name '*.md')
+[ $cl_bad -eq 0 ] && ok "commands exposed to pi are tool-neutral"
+
+# pi must load our extensions from this repo.
+grep -q '\.claude/pi/extensions' "$HOME/.pi/agent/settings.json" 2>/dev/null \
+    && ok "pi loads ~/.claude/pi/extensions" \
+    || warn "~/.pi/agent/settings.json lacks \"extensions\": [\"~/.claude/pi/extensions\"]"
 
 echo ""
 if [ $FAILS -gt 0 ]; then

@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# herdr-spawn-agent — split the caller's pane and start an agent in it, with file handoff.
+# Harness-neutral: agents call it via Bash; pi's /spawn (pi/extensions/herdr-spawn.ts) wraps it.
+#
+# Usage: herdr-spawn-agent <name> [options] [-- <prompt...>]
+#
+#   --kind <kind>        agent kind (default: pi)
+#   --direction <d>      right|down (default: auto from caller pane geometry)
+#   --cwd <path>         working directory for the new pane (default: $PWD)
+#   --model <model>      pass --model through to the spawned agent
+#   --thinking <level>   pass --thinking through (pi only)
+#   --wait               wait for the submitted prompt to settle (default: do not wait)
+#   --timeout <ms>       prompt wait timeout (default: 600000)
+#
+# Prints one line: "<pane_id> <name> <report_path>"
+set -euo pipefail
+
+usage() {
+	cat >&2 <<'EOF'
+usage: herdr-spawn-agent <name> [--kind pi] [--direction right|down] [--cwd DIR]
+                      [--model MODEL] [--thinking LEVEL] [--wait] [--timeout MS]
+                      [-- <prompt text>]
+EOF
+	exit 2
+}
+
+if [[ "${HERDR_ENV:-}" != 1 || -z "${HERDR_PANE_ID:-}" ]]; then
+	echo "herdr-spawn-agent: not running inside a herdr pane (HERDR_ENV / HERDR_PANE_ID unset)" >&2
+	exit 1
+fi
+
+name=""
+kind="pi"
+direction=""
+cwd="$PWD"
+model=""
+thinking=""
+prompt=""
+timeout=600000
+wait=0
+
+while (( $# )); do
+	case $1 in
+	--kind) kind=${2:?--kind needs a value}; shift 2 ;;
+	--direction) direction=${2:?--direction needs a value}; shift 2 ;;
+	--cwd) cwd=${2:?--cwd needs a value}; shift 2 ;;
+	--model) model=${2:?--model needs a value}; shift 2 ;;
+	--thinking) thinking=${2:?--thinking needs a value}; shift 2 ;;
+	--wait) wait=1; shift ;;
+	--timeout) timeout=${2:?--timeout needs a value}; shift 2 ;;
+	--)
+		shift
+		prompt="$*"
+		break
+		;;
+	-h | --help) usage ;;
+	-*)
+		echo "herdr-spawn-agent: unknown option $1" >&2
+		usage
+		;;
+	*)
+		if [[ -n $name ]]; then
+			echo "herdr-spawn-agent: unexpected extra argument $1" >&2
+			usage
+		fi
+		name=$1
+		shift
+		;;
+	esac
+done
+
+if [[ -z $name ]]; then usage; fi
+if [[ -n $thinking && $kind != pi ]]; then
+	echo "herdr-spawn-agent: --thinking is pi-only (got --kind $kind)" >&2
+	exit 2
+fi
+
+# Wide pane -> split right; narrow or tall pane -> split down.
+if [[ -z $direction ]]; then
+	direction=$(herdr pane layout --pane "$HERDR_PANE_ID" |
+		jq -r 'if .result.layout.area.width >= .result.layout.area.height then "right" else "down" end')
+fi
+
+pane=$(herdr pane split --current --direction "$direction" --cwd "$cwd" --no-focus |
+	jq -r '.result.pane.pane_id')
+if [[ -z $pane || $pane == null ]]; then
+	echo "herdr-spawn-agent: pane split returned no pane id" >&2
+	exit 1
+fi
+
+agent_args=()
+if [[ -n $model ]]; then agent_args+=(--model "$model"); fi
+if [[ -n $thinking ]]; then agent_args+=(--thinking "$thinking"); fi
+
+if ((${#agent_args[@]})); then
+	herdr agent start "$name" --kind "$kind" --pane "$pane" -- "${agent_args[@]}" >/dev/null
+else
+	herdr agent start "$name" --kind "$kind" --pane "$pane" >/dev/null
+fi
+
+report=""
+if [[ -n $prompt ]]; then
+	mkdir -p "${TMPDIR:-/tmp}/herdr-reports"
+	report=$(mktemp -u "${TMPDIR:-/tmp}/herdr-reports/${name}-XXXXXX.md")
+	text="$prompt
+
+When you are done, write your complete report as Markdown to $report and reply with only that path. Do not paste the report into the terminal."
+
+	if ((wait)); then
+		herdr agent prompt "$name" "$text" --wait --timeout "$timeout" >/dev/null
+	else
+		herdr agent prompt "$name" "$text" >/dev/null
+	fi
+fi
+
+printf '%s %s %s\n' "$pane" "$name" "$report"
