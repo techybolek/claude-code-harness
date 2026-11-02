@@ -1,17 +1,21 @@
 ---
-description: Evaluate how an agent performed on a run and suggest harness/skill/command/instruction improvements
+name: reflect
+description: "Evaluate how an agent performed on a run and suggest harness/skill/command/instruction improvements"
+disable-model-invocation: true
 argument-hint: "[blank=this convo | last | <session-id> | subagent]"
 allowed-tools: Read, Glob, Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(jq:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(pwd), Bash(sed:*)
 ---
 
 Evaluate how an agent performed on a task, then recommend concrete changes to the harness, skills, commands, and instructions so the next run goes better. **Report only — never edit, write, or apply anything.**
 
-## Resolve the target from `$ARGUMENTS`
+## Resolve the target
 
-First determine the harness you are running in:
+The target is the text the user passed with this invocation (none = the current conversation).
+
+First determine the harness you are running in (check order matters: child shells inherit a parent harness's vars):
 
 ```bash
-test "${PI_CODING_AGENT:-}" = true && echo pi || echo claude
+if [ -n "${CODEX_THREAD_ID:-}" ]; then echo codex; elif [ "${PI_CODING_AGENT:-}" = true ]; then echo pi; else echo claude; fi
 ```
 
 `<encoded-cwd>` = the absolute cwd with every `/` replaced by `-` (e.g. `/home/me/proj` → `-home-me-proj`). Compute it: `pwd | sed 's:/:-:g'`.
@@ -20,13 +24,14 @@ test "${PI_CODING_AGENT:-}" = true && echo pi || echo claude
 |---|---|---|
 | Claude Code | `~/.claude/projects/<encoded-cwd>/<id>.jsonl` | records may carry `"isSidechain":true` for subagent runs |
 | Pi | `~/.pi/agent/sessions/<encoded-cwd>/*.jsonl` | filename `<ISO-with-dashes>_<uuid>.jsonl`; first line `{"type":"session","id":…,"cwd":…}`; no `isSidechain` flag |
+| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` | not keyed by cwd: match `select(.type=="session_meta").payload.cwd`; no subagent flag |
 
 - **blank** → reflect on **the current conversation** (you already have its full history in context; do not parse any file).
 - **`last` / `recent`** → the most recently modified `.jsonl` in your harness's root, excluding the current session. Under pi the current session is `$PI_SESSION_FILE`; its directory is the root.
-- **`<session-id>`** → that specific transcript in your harness's root. Under pi the id is the uuid after the `_` in the filename (`$PI_SESSION_ID` for the current session).
-- **`subagent`** → Claude Code only: the most recent `isSidechain` run. Pi records no such flag — say so and stop rather than guessing which run was delegated.
+- **`<session-id>`** → that specific transcript in your harness's root. Under pi the id is the uuid after the `_` in the filename (`$PI_SESSION_ID` for the current session). Under Codex it is the trailing uuid (`$CODEX_THREAD_ID` for the current session).
+- **`subagent`** → Claude Code only: the most recent `isSidechain` run. Pi and Codex record no such flag — say so and stop rather than guessing which run was delegated.
 
-For file-based targets, parse the `.jsonl` to reconstruct: the user's goal, the assistant's turns, every tool call and result, errors, hook rejections, permission denials, and the final outcome. Use `jq` to slice it; don't dump the whole file. Under pi, messages are `{"type":"message",…,"message":{"role":…}}` entries; skip `model_change`, `thinking_level_change`, and other non-message records. For `subagent`, isolate the sidechain block.
+For file-based targets, parse the `.jsonl` to reconstruct: the user's goal, the assistant's turns, every tool call and result, errors, hook rejections, permission denials, and the final outcome. Use `jq` to slice it; don't dump the whole file. Under pi, messages are `{"type":"message",…,"message":{"role":…}}` entries; skip `model_change`, `thinking_level_change`, and other non-message records. Under Codex, use `response_item` records (`payload.type` = `message`, plus tool calls: `*_call` and `*_call_output`, e.g. `custom_tool_call`); skip `event_msg`, `turn_context` and the rest. For `subagent`, isolate the sidechain block.
 
 > **Self-reflection blind spot:** when the target is the current conversation, you are grading your own work in the same context — you will be lenient and cannot see what you never noticed. Deliberately adopt a skeptical *external reviewer* stance: assume there were missed skills and wasted steps, and hunt for them.
 
