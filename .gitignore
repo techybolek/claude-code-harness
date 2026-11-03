@@ -10,6 +10,7 @@
 !skills/
 !skills/**
 skills/playwright-cli/
+skills/handoff
 !agents/
 !agents/**
 !hooks/
