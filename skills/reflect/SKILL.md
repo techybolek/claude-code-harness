@@ -2,15 +2,18 @@
 name: reflect
 description: "Evaluate how an agent performed on a run and suggest harness/skill/command/instruction improvements"
 disable-model-invocation: true
-argument-hint: "[blank=this convo | last | <session-id> | subagent]"
+argument-hint: "[last | <session-id> | subagent] [focus question]"
 allowed-tools: Read, Glob, Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(jq:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(pwd), Bash(sed:*)
 ---
 
-Evaluate how an agent performed on a task, then recommend concrete changes to the harness, skills, commands, and instructions so the next run goes better. **Report only — never edit, write, or apply anything.**
+Evaluate how an agent performed on a task, then recommend concrete changes to the harness, skills, commands, and instructions so the next run goes better. **Report only — edit, write or apply nothing until the user approves specific items.**
 
 ## Resolve the target
 
-The target is the text the user passed with this invocation (none = the current conversation).
+Split the text the user passed into **target** and **focus**:
+
+- **Target** — only a leading `last`, `recent`, `<session-id>` or `subagent`. Absent → the current conversation.
+- **Focus** — all remaining text (usually a question). Absent → no focus.
 
 First determine the harness you are running in (check order matters: child shells inherit a parent harness's vars):
 
@@ -26,7 +29,7 @@ if [ -n "${CODEX_THREAD_ID:-}" ]; then echo codex; elif [ "${PI_CODING_AGENT:-}"
 | Pi | `~/.pi/agent/sessions/<encoded-cwd>/*.jsonl` | filename `<ISO-with-dashes>_<uuid>.jsonl`; first line `{"type":"session","id":…,"cwd":…}`; no `isSidechain` flag |
 | Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` | not keyed by cwd: match `select(.type=="session_meta").payload.cwd`; no subagent flag |
 
-- **blank** → reflect on **the current conversation** (you already have its full history in context; do not parse any file).
+- **no target** → reflect on **the current conversation** (you already have its full history in context; do not parse any file).
 - **`last` / `recent`** → the most recently modified `.jsonl` in your harness's root, excluding the current session. Under pi the current session is `$PI_SESSION_FILE`; its directory is the root.
 - **`<session-id>`** → that specific transcript in your harness's root. Under pi the id is the uuid after the `_` in the filename (`$PI_SESSION_ID` for the current session). Under Codex it is the trailing uuid (`$CODEX_THREAD_ID` for the current session).
 - **`subagent`** → Claude Code only: the most recent `isSidechain` run. Pi and Codex record no such flag — say so and stop rather than guessing which run was delegated.
@@ -35,7 +38,16 @@ For file-based targets, parse the `.jsonl` to reconstruct: the user's goal, the 
 
 > **Self-reflection blind spot:** when the target is the current conversation, you are grading your own work in the same context — you will be lenient and cannot see what you never noticed. Deliberately adopt a skeptical *external reviewer* stance: assume there were missed skills and wasted steps, and hunt for them.
 
-## Part 1 — Performance evaluation
+## Focused mode (a focus was given)
+
+Answer the focus question directly — that is the whole report. Skip Part 1's rubric and the whole-session verdict.
+
+- Examine only the part of the run the focus concerns; cite evidence from it.
+- If the focus names a tool, script, skill or command, read its source before recommending.
+- Give recommendations in Part 2's format (tags, files, reasons), limited to the focus.
+- Something outside the focus gets at most one line, and only if it is serious.
+
+## Part 1 — Performance evaluation (no focus)
 
 Open with a one-line verdict (did it accomplish the goal — correct, complete, verified?). Then findings across this rubric. Every finding cites concrete evidence from the run (a tool call, a quoted turn, an error).
 
@@ -62,3 +74,5 @@ Prefer enforcement over prose — pick the highest target that prevents the miss
 Skill `description` fixes: ≤ ~250 chars, what it does + when, in the words a user would type; no example lists; add "Not for X; use Y" only for a real near miss.
 
 For each: state the change, the file it touches, and the one-line reason tied to the evidence. Show proposed wording or a diff sketch when it clarifies — but **apply nothing**. If a run was clean with no improvements warranted, say so plainly rather than inventing recommendations.
+
+End with one line offering to apply the recommendations (by number). When the user agrees, apply exactly the items they approved, then list each one as applied or not applied.
