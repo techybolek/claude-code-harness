@@ -6,73 +6,33 @@ argument-hint: "[last | <session-id> | subagent] [focus question]"
 allowed-tools: Read, Glob, Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(jq:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(pwd), Bash(sed:*)
 ---
 
-Evaluate how an agent performed on a task, then recommend concrete changes to the harness, skills, commands, and instructions so the next run goes better. **Report only — edit, write or apply nothing until the user approves specific items.**
+Look back at an agent run and recommend changes that make the next run go better. The user is tuning their harness, so the value is in fixes that carry over to future runs, not in a review of this one.
 
-## Resolve the target
+## What to look at
 
-Split the text the user passed into **target** and **focus**:
+A leading `last`/`recent`, `<session-id>` or `subagent` picks another run; otherwise it is this conversation, already in context. All remaining text is the **focus**: the user's actual question. When there is a focus, answer only that, because a whole-session critique buries the one thing they asked about. With no focus, judge the whole run.
 
-- **Target** — only a leading `last`, `recent`, `<session-id>` or `subagent`. Absent → the current conversation.
-- **Focus** — all remaining text (usually a question). Absent → no focus.
+Other runs live in transcripts. Detect the harness first: `CODEX_THREAD_ID` set → codex; `PI_CODING_AGENT=true` → pi; else claude.
 
-First determine the harness you are running in (check order matters: child shells inherit a parent harness's vars):
-
-```bash
-if [ -n "${CODEX_THREAD_ID:-}" ]; then echo codex; elif [ "${PI_CODING_AGENT:-}" = true ]; then echo pi; else echo claude; fi
-```
-
-`<encoded-cwd>` = the absolute cwd with every `/` replaced by `-` (e.g. `/home/me/proj` → `-home-me-proj`). Compute it: `pwd | sed 's:/:-:g'`.
-
-| Harness | Transcript root | Shape |
+| Harness | Transcripts | Notes |
 |---|---|---|
-| Claude Code | `~/.claude/projects/<encoded-cwd>/<id>.jsonl` | records may carry `"isSidechain":true` for subagent runs |
-| Pi | `~/.pi/agent/sessions/<encoded-cwd>/*.jsonl` | filename `<ISO-with-dashes>_<uuid>.jsonl`; first line `{"type":"session","id":…,"cwd":…}`; no `isSidechain` flag |
-| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` | not keyed by cwd: match `select(.type=="session_meta").payload.cwd`; no subagent flag |
+| Claude Code | `~/.claude/projects/<cwd with / → ->/<id>.jsonl` | subagent runs carry `"isSidechain":true` |
+| Pi | `~/.pi/agent/sessions/<encoded-cwd>/<ISO>_<uuid>.jsonl` | current: `$PI_SESSION_FILE`; use `type=="message"` records |
+| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` | match `session_meta.payload.cwd`; use `response_item` records |
 
-- **no target** → reflect on **the current conversation** (you already have its full history in context; do not parse any file).
-- **`last` / `recent`** → the most recently modified `.jsonl` in your harness's root, excluding the current session. Under pi the current session is `$PI_SESSION_FILE`; its directory is the root.
-- **`<session-id>`** → that specific transcript in your harness's root. Under pi the id is the uuid after the `_` in the filename (`$PI_SESSION_ID` for the current session). Under Codex it is the trailing uuid (`$CODEX_THREAD_ID` for the current session).
-- **`subagent`** → Claude Code only: the most recent `isSidechain` run. Pi and Codex record no such flag — say so and stop rather than guessing which run was delegated.
+`last` means the newest transcript other than the current one. `subagent` exists only in Claude Code; elsewhere, say so and stop instead of guessing. Slice transcripts with `jq` and don't dump them, since they're large.
 
-For file-based targets, parse the `.jsonl` to reconstruct: the user's goal, the assistant's turns, every tool call and result, errors, hook rejections, permission denials, and the final outcome. Use `jq` to slice it; don't dump the whole file. Under pi, messages are `{"type":"message",…,"message":{"role":…}}` entries; skip `model_change`, `thinking_level_change`, and other non-message records. Under Codex, use `response_item` records (`payload.type` = `message`, plus tool calls: `*_call` and `*_call_output`, e.g. `custom_tool_call`); skip `event_msg`, `turn_context` and the rest. For `subagent`, isolate the sidechain block.
+## How to judge
 
-> **Self-reflection blind spot:** when the target is the current conversation, you are grading your own work in the same context — you will be lenient and cannot see what you never noticed. Deliberately adopt a skeptical *external reviewer* stance: assume there were missed skills and wasted steps, and hunt for them.
+- **Be a skeptical outside reviewer.** Grading your own run, you'll be lenient and can't see what you never noticed.
+- **Cite evidence for every finding** (a tool call, a quoted turn, an error). Claims without evidence can't be acted on.
+- Things worth hunting for: unverified claims of success, wasted or repeated steps, skills that existed but weren't used, broken standing instructions, permission and hook friction.
 
-## Focused mode (a focus was given)
+## Recommendations
 
-Answer the focus question directly — that is the whole report. Skip Part 1's rubric and the whole-session verdict.
+- **Prevent the miss as far upstream as you can.** A code check or hook beats a rule the agent has to remember, and an always-on instruction costs context in every session, so pick the cheapest fix that would actually have stopped it. Tag each one `[code]`, `[harness]`, `[instruction]`, `[skill]` or `[command]`.
+- **Only propose fixes for systematic misses.** A one-off doesn't earn a rule that costs context in every session.
+- **Read the file you'd change before proposing a change to it.** That includes a script or tool the focus names, because recommendations made blind don't fit what's actually there.
+- Rank by impact. For each, give the file, the change and a one-line reason tied to the evidence. If the run was clean, say so rather than inventing fixes.
 
-- Examine only the part of the run the focus concerns; cite evidence from it.
-- If the focus names a tool, script, skill or command, read its source before recommending.
-- Give recommendations in Part 2's format (tags, files, reasons), limited to the focus.
-- Something outside the focus gets at most one line, and only if it is serious.
-
-## Part 1 — Performance evaluation (no focus)
-
-Open with a one-line verdict (did it accomplish the goal — correct, complete, verified?). Then findings across this rubric. Every finding cites concrete evidence from the run (a tool call, a quoted turn, an error).
-
-- **Outcome** — goal achieved? Correct, complete, actually verified (not just claimed)?
-- **Efficiency** — wasted steps, re-reads, backtracking, dead ends, redundant tool calls.
-- **Tooling** — right skills/commands used? Missed a skill/command that existed? Reinvented something a skill/command already does?
-- **Adherence** — followed CLAUDE.md, project conventions, TDD, brevity, and other standing instructions?
-- **Friction** — errors, retries, permission prompts, hook blocks that slowed it down.
-
-Skip rubric items with nothing noteworthy. Be specific and honest; this is a critique, not a pat on the back.
-
-## Part 2 — Optimization recommendations
-
-Map each friction point / miss from Part 1 to a concrete change. Tag every recommendation by target and order them by impact (highest first). To ground a recommendation, **Read** the relevant existing file first (the skill's `SKILL.md`, the command, `CLAUDE.md`, `settings.json`) so the suggestion fits what's actually there.
-
-- `[harness]` — `settings.json` permission allowlist entries (for prompts that recurred), hooks, env. Under pi the equivalents are extensions, the `resources` arrays in `settings.json`, and env.
-- `[skill]` — a missing skill worth creating, a skill that should have triggered but didn't (fix its `description`), or outdated/wrong skill content.
-- `[command]` — a missing or unclear command.
-- `[instruction]` — a CLAUDE.md gap or contradiction that caused a mistake.
-- `[code]` — a change in the project itself: lint rule, type/invariant, test, CI check, or cleaning up a bad pattern the agent copied.
-
-Prefer enforcement over prose — pick the highest target that prevents the miss: makes the mistake impossible or fail fast in the project → `[code]`; one right answer in agent behavior → hook/script (`[harness]`); always-on one-liner → `[instruction]`; judgment plus local facts → `[skill]`. Propose a skill/rule only for misses that look systematic, not one-off — every line costs context forever.
-
-Skill `description` fixes: ≤ ~250 chars, what it does + when, in the words a user would type; no example lists; add "Not for X; use Y" only for a real near miss.
-
-For each: state the change, the file it touches, and the one-line reason tied to the evidence. Show proposed wording or a diff sketch when it clarifies — but **apply nothing**. If a run was clean with no improvements warranted, say so plainly rather than inventing recommendations.
-
-End with one line offering to apply the recommendations (by number). When the user agrees, apply exactly the items they approved, then list each one as applied or not applied.
+**Report only.** End by offering to apply items by number. Apply only the items the user approves, then report each as applied or not applied.
