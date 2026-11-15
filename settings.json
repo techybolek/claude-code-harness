@@ -14,7 +14,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "sonnet",
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -87,5 +87,6 @@
   "skipWorkflowUsageWarning": true,
   "theme": "dark",
   "editorMode": "vim",
-  "switchModelsOnFlag": true
+  "switchModelsOnFlag": true,
+  "agentPushNotifEnabled": true
 }
