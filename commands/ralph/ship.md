@@ -22,6 +22,8 @@ never end a turn with a promise.
    `test "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)"` — else STOP.
    Record `PROJECT_ROOT=$(git rev-parse --show-toplevel)` and
    `BASE_BRANCH=$(git rev-parse --abbrev-ref HEAD)`.
+   `BASE_BRANCH` ≠ the remote default (`git symbolic-ref --short refs/remotes/origin/HEAD`, minus `origin/`)
+   → ask once whether to ship into `BASE_BRANCH` before continuing; the PR targets it.
 2. Spec:
    - `$ARGUMENTS` names an existing `.md` → that is the spec.
    - Otherwise the newest spec by modification time:
@@ -101,7 +103,16 @@ The panel judged the whole diff vs `BASE_REF`, tracked and untracked alike, so
 the branch tip must equal what it judged:
 
 ```bash
-cd "$WORKTREE" && git add -A -- ':!.runs' && { git diff --cached --quiet || git commit -q -m "fix(review): apply review-flow-only panel findings"; }
+cd "$WORKTREE" && { git add -A -- ':!.runs' 2>/dev/null; true; } && { git diff --cached --quiet || git commit -q -m "fix(review): apply review-flow-only panel findings"; } && git status --porcelain
+```
+
+(`git add` exits 1 when `.runs` is gitignored — never chain the commit on it.) Any
+output from the final `git status --porcelain` → STOP: the tip does not equal what the panel judged.
+
+Then stop dev servers the agents left running in the worktree (they serve a pre-fix build and hold ports):
+
+```bash
+for p in $(pgrep -f 'ng serve|server_tp'); do [[ $(readlink /proc/$p/cwd) == "$WORKTREE"* ]] && kill $p; done
 ```
 
 Then write the findings report (non-fatal if it fails):
