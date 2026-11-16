@@ -83,6 +83,19 @@ for the human; the implement loop carries them itself.
 - **`max_iterations` / `agent_error`** — report the iteration history; STOP.
   Continue with `/ralph:ship <SPEC_REL>`.
 
+## Friction log
+
+After each workflow returns (Step 4 on any outcome, including `blocked`; Step 5), if its
+`friction` is non-empty, append it (non-fatal) — `/harness:steward` reads this log:
+
+```bash
+mkdir -p ~/.claude/state && python3 -c 'import json,sys
+for e in json.load(sys.stdin): print(json.dumps({"ts":sys.argv[1],"project":sys.argv[2],"task":sys.argv[3],**e}))' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PROJECT_ROOT" <task> >> ~/.claude/state/friction.jsonl <<'FRICTION_JSON'
+<the workflow's friction array, verbatim JSON>
+FRICTION_JSON
+```
+
 ## Step 5 — Review
 
 `BASE_REF=$(git -C "$WORKTREE" merge-base "$BASE_BRANCH" HEAD)` — empty → STOP
@@ -155,6 +168,7 @@ hook's stderr; the commit stands and a resume re-runs this step.
 - Declined (real, left unfixed): <list or None>
 - Plan deviations — HUMAN RULING REQUIRED: <list or None>
 - Unresolved: <list or None>
+- Friction: <n> logged (<h> harness · <p> project) — ~/.claude/state/friction.jsonl
 - Findings report: SPEC/ACTIVE/<task>/review-findings.md
 - PR: <PR_URL, or "not opened — <reason>">
 - Next: review and merge the PR (no PR → inspect and merge `ralph/<task>` from the main checkout), then

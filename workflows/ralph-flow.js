@@ -29,6 +29,19 @@ if (!projectRoot || !taskDir || !worktreePath) {
 }
 
 // ---------- schema ----------
+// Agent-reported friction: /ralph:ship appends it to ~/.claude/state/friction.jsonl,
+// /harness:steward reads it as evidence.
+const FRICTION = {
+  type: 'array',
+  items: {
+    type: 'object', required: ['scope', 'what', 'wanted'],
+    properties: {
+      scope: { enum: ['harness', 'project'] },
+      what: { type: 'string' }, wanted: { type: 'string' }, cost: { type: 'string' },
+      files: { type: 'array', items: { type: 'string' } },
+    },
+  },
+}
 const ITER_REPORT = {
   type: 'object', required: ['status', 'summary'],
   properties: {
@@ -40,6 +53,7 @@ const ITER_REPORT = {
     tests_passed: { type: 'number' },
     regression_passed: { type: ['boolean', 'null'] },
     blocked_reason: { type: 'string' },
+    friction: FRICTION,
   },
 }
 
@@ -65,6 +79,7 @@ Do NOT print <ralph>...</ralph> markers; they are inert here. Return structured 
 - status: "item_done" (this iteration's selected items complete and committed; more tasks.md items remain) | "all_done" (every tasks.md item checked, SUMMARY.md written, all work committed) | "blocked" (AGENT_PROMPT's ERROR_STOP cases)
 - summary: what you completed and HOW you verified it 
 - items_completed (task ids, e.g. ["P1-2","P1-3"]), commit_sha, tests_written, tests_passed, regression_passed (null if not run), blocked_reason (blocked only)
+- friction (omit when none): anything that cost you real time and would cost the next agent the same — an instruction that was unclear or wrong, a missing script or doc, an environment step you had to work out. One entry each: scope "harness" (the cause is under ~/.claude: prompts, commands, scripts, skills) or "project" (the cause is in this repo or its environment), what happened, what you wanted instead, cost (rough minutes or retries), files. The task simply being hard is not friction.
 
 ## Progress log — replaces AGENT_PROMPT's PROGRESS LOG section
 Do NOT write .runs/*/ralph_progress.txt and do NOT invent timestamps — the orchestrator records iteration history with real clocks (you are reading that record above).
@@ -97,7 +112,7 @@ for (let i = 1; i <= maxIterations; i++) {
   }
   if (!r) { outcome = 'agent_error'; break }
 
-  history.push({ iteration: i, status: r.status, summary: r.summary, commit_sha: r.commit_sha ?? null, items_completed: r.items_completed ?? [] })
+  history.push({ iteration: i, status: r.status, summary: r.summary, commit_sha: r.commit_sha ?? null, items_completed: r.items_completed ?? [], friction: r.friction ?? [] })
   log(`iter ${i}: ${r.status}${r.commit_sha ? ` @ ${r.commit_sha}` : ''} — ${(r.summary ?? '').slice(0, 140)}`)
 
   if (r.status === 'all_done') { outcome = 'all_done'; break }
@@ -112,4 +127,5 @@ const next = {
   agent_error: `Iteration agent died twice in a row (likely API outage). Re-run /ralph:ship <spec> once the API is healthy.`,
 }[outcome]
 
-return { outcome, iterations: history.length, blockedReason, history, projectRoot, taskDir, worktreePath, next }
+const friction = history.flatMap(h => h.friction.map(f => ({ ...f, source: `implement iter ${h.iteration}` })))
+return { outcome, iterations: history.length, blockedReason, history, friction, projectRoot, taskDir, worktreePath, next }

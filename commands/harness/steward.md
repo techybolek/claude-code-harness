@@ -1,4 +1,5 @@
 ---
+harness: claude
 description: Self-improving harness — read recent real sessions, diagnose recurring harness problems with Fable 5.2, walk the user through proposed fixes, apply approved ones uncommitted
 ---
 
@@ -25,13 +26,15 @@ Cost: `python3 -I ~/.claude/scripts/steward/steward.py cost <workflow transcript
 
 ## Step 3 — Walkthrough
 
-Show the `overview`, then the ledger verdicts in one short list.
+Show the `overview`, then the ledger verdicts in one short list. If `projectFriction` is not empty, list it under "Project friction (fix in that repo)".
 
 Then each proposal in order, one per AskUserQuestion call. Before asking, show: title, kind, cause, 2–3 evidence lines, the target file, the diff (old → new), the signal and expected effect, and the ADR draft if any. Options: **Apply**, **Skip**. The user's "Other" text means apply with that adjustment.
 
 - Re-read the target file before applying. If an `oldString` no longer occurs exactly once, re-derive the edit from the current file, show the new diff, and ask again.
-- Apply with Edit. For an ADR draft: write `~/.claude/adr/NNNN-<kebab-title>.md` (next number, status Accepted, today's date), add it to `adr/index.md`; if it supersedes one, set the old ADR's status to `Superseded by ADR-NNNN` and remove it from the index.
+- Apply with Edit. For an ADR draft: write `adr/NNNN-<kebab-title>.md` (next number, status Accepted, today's date), add it to `adr/index.md`; if it supersedes one, set the old ADR's status to `Superseded by ADR-NNNN` and remove it from the index.
 - Track every answer: applied, adjusted, or skipped (with the user's reason if given).
+
+After the last proposal, if anything was applied, run `~/.claude/scripts/verify-harness.sh`; show any `[FAIL]` lines and fix them with the user before Step 4.
 
 Last, if `tuningLogClosures` is not empty, ask once whether to tick those items in `notes/harness-tuning-log.md`, each annotated `(closed by steward <date>: <evidence>)`.
 

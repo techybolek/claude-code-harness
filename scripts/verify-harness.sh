@@ -58,10 +58,12 @@ PYEOF
 
 # --- 3. ~/.claude paths referenced by commands/workflows exist ---------------
 # Any literal ~/.claude/... file reference in a command or workflow must exist.
+# ~/.claude/state/ is exempt: gitignored runtime state, created on first use.
 FAILS_BEFORE_REFS=$FAILS
 while IFS= read -r line; do
     src="${line%%:*}"
     ref="${line#*:}"
+    case "$ref" in "~/.claude/state/"*) continue ;; esac
     expanded="${ref/#\~/$HOME}"
     if [ ! -e "$expanded" ]; then
         fail "$(basename "$src") references missing path: $ref" "create the file or update the reference in $src"

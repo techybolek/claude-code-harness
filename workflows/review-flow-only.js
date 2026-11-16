@@ -84,6 +84,20 @@ const AGENT_RESULT = {
 // Adjudicator output: ONE seat holding both judgement and repair. It decides which
 // findings are real, which of the real ones are worth fixing, and then fixes those —
 // so the four lists below are a complete accounting of every finding handed to it.
+// Agent-reported friction: /ralph:ship appends it to ~/.claude/state/friction.jsonl,
+// /harness:steward reads it as evidence. Same shape as ralph-flow.js.
+const FRICTION = {
+  type: 'array',
+  items: {
+    type: 'object', required: ['scope', 'what', 'wanted'],
+    properties: {
+      scope: { enum: ['harness', 'project'] },
+      what: { type: 'string' }, wanted: { type: 'string' }, cost: { type: 'string' },
+      files: { type: 'array', items: { type: 'string' } },
+    },
+  },
+}
+
 const ADJUDICATOR_OUT = {
   type: 'object', required: ['status', 'fixed', 'rejected', 'declined', 'summary'],
   properties: {
@@ -99,6 +113,7 @@ const ADJUDICATOR_OUT = {
     filesChanged: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
     issues: { type: 'string' },
+    friction: FRICTION,
   },
 }
 
@@ -285,7 +300,8 @@ The four lists together must account for EVERY finding above — one bucket each
 - rejected: "{finding} — STALE|UNREALISTIC|DUPLICATE — {evidence}"
 - declined: "{finding} — {why fixing is not warranted} — {residual risk accepted}"
 - planDeviations: "{finding} — {which plan clause vs which code reality} — {why fixing toward the plan's letter would be wrong}"
-- status: SUCCESS unless you were unable to complete the repairs you committed to; filesChanged; summary; issues ("None" if none).`
+- status: SUCCESS unless you were unable to complete the repairs you committed to; filesChanged; summary; issues ("None" if none).
+- friction (omit when none; separate from the four lists): anything that cost you real time and would cost the next agent the same — an instruction that was unclear or wrong, a missing script or doc, an environment step you had to work out. One entry each: scope "harness" (the cause is under ~/.claude: prompts, commands, scripts, skills) or "project" (the cause is in this repo or its environment), what happened, what you wanted instead, cost (rough minutes or retries), files. A finding simply being hard to fix is not friction.`
 }
 
 // ---------- Phase: Validate ----------
@@ -308,6 +324,7 @@ let reviewNits = []
 let unresolvedFindings = []
 let rejected = []      // adjudicator: not real
 let declined = []      // adjudicator: real, deliberately unfixed — surfaced for the human
+const friction = []    // adjudicator-reported friction — the launcher logs it for the steward
 let planDeviations = [] // adjudicator: plan-vs-code conflicts — human decision, never auto-fixed
 const fixedFindings = []
 if (validation !== 'FAIL') {
@@ -381,6 +398,7 @@ if (validation !== 'FAIL') {
     rejected.push(...(a.rejected ?? []))
     declined.push(...(a.declined ?? []))
     planDeviations.push(...(a.planDeviations ?? []))
+    friction.push(...(a.friction ?? []).map(f => ({ ...f, source: `adjudicate r${round}` })))
     const justFixed = a.fixed ?? []
     fixedFindings.push(...justFixed)
     log(`adjudicate r${round}: ${justFixed.length} fixed, ${(a.rejected ?? []).length} rejected, ${(a.declined ?? []).length} declined, ${(a.planDeviations ?? []).length} plan deviations escalated`)
@@ -432,4 +450,5 @@ return {
   fixed: fixedFindings,
   rejected,
   nits: reviewNits,
+  friction,
 }

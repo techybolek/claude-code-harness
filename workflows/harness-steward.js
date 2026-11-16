@@ -96,6 +96,7 @@ const PROPOSALS = {
         properties: { entry: { type: 'string' }, verdict: { enum: ['kept', 'revert_proposed', 'evaluating', 'confounded'] }, reason: { type: 'string' } },
       },
     },
+    projectFriction: { type: 'array', items: { type: 'string' } },
     tuningLogClosures: {
       type: 'array',
       items: { type: 'object', required: ['item', 'evidence'], properties: { item: { type: 'string' }, evidence: { type: 'string' } } },
@@ -112,7 +113,8 @@ Your job this run: find what keeps going wrong across the user's real sessions s
 2. Read ${harnessRoot}/adr/index.md and every ADR relevant to a proposal. A proposal that contradicts an Accepted ADR must include adrDraft with supersedes set, and must say why the old reason no longer holds.
 3. Read ${harnessRoot}/notes/steward-ledger.md if it exists: changes applied by earlier runs (with target signal and baseline) and proposals the user declined. Never re-propose a declined change unless new evidence is materially stronger; say so if you do.
 4. Read ${harnessRoot}/notes/harness-tuning-log.md open items (unchecked boxes).
-5. Read any harness file you need. Session digests behind the facts are not available to you; work from the facts.
+5. Read ${harnessRoot}/state/friction.jsonl if it exists; use entries with ts on or after ${since}. Each is a pipeline agent's own report of what cost it time. scope "harness" entries are evidence as strong as user_correction; entries from two different tasks naming the same cause satisfy the 2-session rule (cite as "task — what"). scope "project" entries never become proposals: return them in projectFriction, one line per distinct cause as "project — cause — count".
+6. Read any harness file you need. Session digests behind the facts are not available to you; work from the facts.
 
 ## What to produce
 - proposals (at most 5, ranked by expected value):
