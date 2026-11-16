@@ -24,6 +24,8 @@ hooks/security-gate.sh
 !workflows/*
 !notes/
 !notes/*
+!adr/
+!adr/**
 !README.md
 skills/synced/
 skills/.trash/
