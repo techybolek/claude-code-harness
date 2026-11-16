@@ -3,7 +3,7 @@ name: reflect
 description: "Evaluate how an agent performed on a run and suggest harness/skill/command/instruction improvements"
 disable-model-invocation: true
 argument-hint: "[last | <session-id> | subagent] [focus question]"
-allowed-tools: Read, Glob, Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(jq:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(pwd), Bash(sed:*)
+allowed-tools: Read, Glob, Bash(ls:*), Bash(cat:*), Bash(grep:*), Bash(jq:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(pwd), Bash(sed:*), Bash(~/.claude/scripts/steward/friction-log.py:*)
 ---
 
 Look back at an agent run and recommend changes that make the next run go better. The user is tuning their harness, so the value is in fixes that carry over to future runs, not in a review of this one.
@@ -35,4 +35,16 @@ Other runs live in transcripts. Detect the harness first: `CODEX_THREAD_ID` set 
 - **Read the file you'd change before proposing a change to it.** That includes a script or tool the focus names, because recommendations made blind don't fit what's actually there.
 - Rank by impact. For each, give the file, the change and a one-line reason tied to the evidence. If the run was clean, say so rather than inventing fixes.
 
-**Report only.** End by offering to apply items by number. Apply only the items the user approves, then report each as applied or not applied.
+## Log the findings
+
+After the report, append every finding to the friction log, systematic or one-off, whether or not you recommended a fix. Your analysis is lost when this session ends; the log keeps it for `/harness:steward`, which reads it across sessions as primary evidence and can see a one-off recur. One entry per finding: `scope` ("harness": the cause is under ~/.claude; "project": the cause is in the repo or its environment), `what` (the finding), `evidence` (your citation), `wanted` (the fix you recommended, or for a one-off what would have prevented it), `systematic` (true if you recommended a fix), `files`, `source: "reflect"`.
+
+```bash
+~/.claude/scripts/steward/friction-log.py adhoc "<project root of the run you judged>" <<'FRICTION_JSON'
+[{"scope": "…", "what": "…", "evidence": "…", "wanted": "…", "systematic": true, "files": ["…"], "source": "reflect"}]
+FRICTION_JSON
+```
+
+Say in one line how many you logged. A clean run logs nothing.
+
+**Report only**, the log append aside. End by offering to apply items by number. Apply only the items the user approves, then report each as applied or not applied.

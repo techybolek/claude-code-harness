@@ -89,9 +89,7 @@ After each workflow returns (Step 4 on any outcome, including `blocked`; Step 5)
 `friction` is non-empty, append it (non-fatal) — `/harness:steward` reads this log:
 
 ```bash
-mkdir -p ~/.claude/state && python3 -c 'import json,sys
-for e in json.load(sys.stdin): print(json.dumps({"ts":sys.argv[1],"project":sys.argv[2],"task":sys.argv[3],**e}))' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PROJECT_ROOT" <task> >> ~/.claude/state/friction.jsonl <<'FRICTION_JSON'
+~/.claude/scripts/steward/friction-log.py <task> "$PROJECT_ROOT" <<'FRICTION_JSON'
 <the workflow's friction array, verbatim JSON>
 FRICTION_JSON
 ```
