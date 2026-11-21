@@ -82,6 +82,24 @@
             "timeout": 60
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/tromanow/.claude/hooks/split.sh",
+            "timeout": 45
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/tromanow/.claude/hooks/lab-hook.mjs",
+            "timeout": 45
+          }
+        ]
       }
     ],
     "PostToolUse": [
