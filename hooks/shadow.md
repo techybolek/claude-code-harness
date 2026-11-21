@@ -14,7 +14,7 @@ Files: `hooks/shadow.mjs` (all logic), `commands/shadow.md` (makes `/shadow` a k
 |---|---|
 | No turn in Main | `commands/shadow.md` + `UserPromptSubmit` hook returning `decision: block` |
 | Shadow pane | `herdr pane split --env SHADOW_*` + `claude --resume <id> --fork-session --tools Read,Grep,Glob` |
-| Role | `role.md`, read as the shadow's first prompt (`--append-system-prompt` is ignored on `--resume`; herdr refuses multi-line args) |
+| Role | `role.md`, given to the shadow by its own `SessionStart` hook as `additionalContext` (`--append-system-prompt` is ignored on `--resume`; herdr refuses multi-line args; reading a file outside the working dirs, or `--add-dir`, stops at a permission prompt) |
 | Feed | Main's `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure`, `Stop` append to `feed.jsonl` (tool output trimmed to 200 chars) |
 | Waking the shadow | its own `Stop` hook (`asyncRewake`, timeout 24 h, passed via `--settings`) waits until the feed has a reply, a failed step or 3 steps, then exits 2 with them as a system reminder. Lines arriving while it is busy are delivered together. |
 | Back to Main | `notes.jsonl`, attached by Main's `UserPromptSubmit` as `additionalContext` |

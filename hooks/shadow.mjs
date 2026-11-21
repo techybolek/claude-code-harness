@@ -8,6 +8,7 @@
 //
 // `node shadow.mjs hook`  every hook in settings.json (Main, and the shadow's own /shadow send)
 // `node shadow.mjs wait`  the shadow's Stop hook, passed only to the shadow via --settings
+// `node shadow.mjs role`  the shadow's SessionStart hook (its role), also only via --settings
 //
 // State: <tmp>/shadow-<uid>/<main session id>/
 //   feed.jsonl  pid  last-pane  notes.jsonl  shadows/<name>/{job,model,pane,offset,role.md,settings.json,items.json,waiter}
@@ -52,7 +53,7 @@ const items = (reply) => {
 const FORMAT = "Reply format: first line a # heading that is your verdict, led by 🟢/🟡/🔴; then a numbered list (1. 2. 3.), " +
   'one short line per item, at most 6; or exactly "🟢 Nothing new." if there is nothing to flag. No paragraphs.';
 
-// The shadow reads this first: --append-system-prompt is ignored on --resume, so the role travels in the chat.
+// The shadow gets this as SessionStart context (see open()).
 const ROLE = (name, job) => [
   `NOTICE: everything above is the user's main conversation ("Main") up to now, kept as background. You are "${name}",`,
   "a supporting agent in a separate pane. You are not Main: never continue its work or answer its questions.",
@@ -86,7 +87,9 @@ Needs claude in a herdr pane (HERDR_ENV=1) and at least one message in Main. Sta
 
 const input = JSON.parse(readFileSync(0, "utf8") || "{}");
 const mode = process.argv[2];
-if (mode === "wait") waiter(); // keeps polling until it wakes the shadow or is replaced
+if (mode === "role") out({ hookSpecificOutput: { hookEventName: "SessionStart",
+  additionalContext: read(join(AGENT_DIR, "shadows", AGENT, "role.md")) } });
+else if (mode === "wait") waiter(); // keeps polling until it wakes the shadow or is replaced
 else { AGENT ? agentHook() : mainHook(); process.exit(0); }
 
 // ---- Main
@@ -186,11 +189,13 @@ function open(dir, args) {
   writeFileSync(join(me, "model"), model);
   writeFileSync(join(me, "offset"), String(existsSync(feedFile) ? statSync(feedFile).size : 0));
   writeFileSync(join(dir, "pid"), process.env.CLAUDE_PID ?? String(process.ppid)); // lets the shadow notice a killed Main
-  // herdr refuses multi-line or non-ASCII agent arguments, so the role goes in a file the shadow reads first.
+  // The role reaches the shadow through its SessionStart hook: --append-system-prompt is ignored on --resume, herdr
+  // refuses multi-line args, and reading a file outside the working dirs stops at a permission prompt.
   writeFileSync(join(me, "role.md"), ROLE(name, job));
   const settings = join(me, "settings.json");
-  writeFileSync(settings, JSON.stringify({ hooks: { Stop: [{ hooks: [
-    { type: "command", command: `node ${JSON.stringify(SCRIPT)} wait`, asyncRewake: true, timeout: WAIT_TIMEOUT_S }] }] } }));
+  const hook = (mode, extra = {}) => [{ hooks: [{ type: "command", command: `node ${JSON.stringify(SCRIPT)} ${mode}`, ...extra }] }];
+  writeFileSync(settings, JSON.stringify({ hooks: { SessionStart: hook("role"),
+    Stop: hook("wait", { asyncRewake: true, timeout: WAIT_TIMEOUT_S }) } }));
 
   // First shadow goes right of Main; later ones stack under the previous shadow's pane.
   const last = read(join(dir, "last-pane"));
@@ -204,7 +209,7 @@ function open(dir, args) {
     // The prompt goes before --tools, which takes every value after it.
     herdr("agent", "start", `${name}-${input.session_id.slice(0, 8)}`, "--kind", "claude", "--pane", np, "--timeout", "30000", "--",
       "--resume", input.session_id, "--fork-session", "--model", model, "--settings", settings, "-n", name,
-      `Read the file ${join(me, "role.md")} and follow it exactly.`, "--tools", "Read,Grep,Glob");
+      "Begin your shadow role from the session context now.", "--tools", "Read,Grep,Glob");
     writeFileSync(join(dir, "last-pane"), np);
   } catch (e) {
     if (np) try { herdr("pane", "close", np); } catch {}
